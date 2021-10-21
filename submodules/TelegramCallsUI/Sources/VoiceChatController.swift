@@ -3670,7 +3670,7 @@ public final class VoiceChatController: ViewController {
                     self.containerLayoutUpdated(layout, navigationHeight: navigationHeight, transition: .animated(duration: 0.4, curve: .spring))
                 }
             } else {
-                DeviceAccess.authorizeAccess(to: .camera(.videoCall), onlyCheck: true, presentationData: self.presentationData.withUpdated(theme: self.darkTheme), present: { [weak self] c, a in
+                DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: self.context.account.isSupportAccount, onlyCheck: true, presentationData: self.presentationData.withUpdated(theme: self.darkTheme), present: { [weak self] c, a in
                     self?.controller?.present(c, in: .window(.root), with: a)
                 }, openSettings: { [weak self] in
                     self?.context.sharedContext.applicationBindings.openSettings()

@@ -364,13 +364,13 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
                 let (presentationData, present, openSettings) = strongSelf.getDeviceAccessData()
                 
                 let accessEnabledSignal: Signal<Bool, NoError> = Signal { subscriber in
-                    DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), presentationData: presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), isSupportAccount: context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                         present(c, a)
                     }, openSettings: {
                         openSettings()
                     }, { value in
                         if isVideo && value {
-                            DeviceAccess.authorizeAccess(to: .camera(.videoCall), presentationData: presentationData, present: { c, a in
+                            DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                                 present(c, a)
                             }, openSettings: {
                                 openSettings()
@@ -454,13 +454,13 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
         let (presentationData, present, openSettings) = self.getDeviceAccessData()
         
         let accessEnabledSignal: Signal<Bool, NoError> = Signal { subscriber in
-            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), presentationData: presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), isSupportAccount: context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                 present(c, a)
             }, openSettings: {
                 openSettings()
             }, { value in
                 if isVideo && value {
-                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), presentationData: presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                         present(c, a)
                     }, openSettings: {
                         openSettings()
@@ -627,13 +627,13 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
         let isVideo = false
         
         let accessEnabledSignal: Signal<Bool, NoError> = Signal { subscriber in
-            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), presentationData: presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), isSupportAccount: accountContext.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                 present(c, a)
             }, openSettings: {
                 openSettings()
             }, { value in
                 if isVideo && value {
-                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), presentationData: presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: accountContext.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                         present(c, a)
                     }, openSettings: {
                         openSettings()
@@ -789,13 +789,13 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
         let isVideo = false
         
         let accessEnabledSignal: Signal<Bool, NoError> = Signal { subscriber in
-            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), presentationData: presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), isSupportAccount: accountContext.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                 present(c, a)
             }, openSettings: {
                 openSettings()
             }, { value in
                 if isVideo && value {
-                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), presentationData: presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: accountContext.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                         present(c, a)
                     }, openSettings: {
                         openSettings()

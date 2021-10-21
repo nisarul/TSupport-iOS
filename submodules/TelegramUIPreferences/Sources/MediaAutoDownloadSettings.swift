@@ -175,6 +175,23 @@ public struct MediaAutoDownloadSettings: PreferencesEntry, Equatable {
         return MediaAutoDownloadSettings(presets: presets, cellular: MediaAutoDownloadConnection(enabled: true, preset: .medium, custom: nil), wifi: MediaAutoDownloadConnection(enabled: true, preset: .high, custom: nil), saveDownloadedPhotos: saveDownloadedPhotos, autoplayGifs: true, autoplayVideos: true, downloadInBackground: true)
     }
     
+    public static var defaultSupportSettings: MediaAutoDownloadSettings {
+        /** TSupport: Default Auto-Download settings for Support Account **/
+        let mb: Int32 = 1024 * 1024
+        let presets = MediaAutoDownloadPresets(low: MediaAutoDownloadCategories(basePreset: .low, photo: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 1 * mb, predownload: false),
+                                                                                video: MediaAutoDownloadCategory(contacts: false, otherPrivate: false, groups: false, channels: false, sizeLimit: 1 * mb, predownload: false),
+                                                                                file: MediaAutoDownloadCategory(contacts: false, otherPrivate: false, groups: false, channels: false, sizeLimit: 1 * mb, predownload: false)),
+                                               medium: MediaAutoDownloadCategories(basePreset: .medium, photo: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 1 * mb, predownload: false),
+                                                                                video: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: Int32(2.5 * CGFloat(mb)), predownload: false),
+                                                                                file: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 1 * mb, predownload: false)),
+                                               high: MediaAutoDownloadCategories(basePreset: .high, photo: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 1 * mb, predownload: false),
+                                                                                video: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 10 * mb, predownload: true),
+                                                                                file: MediaAutoDownloadCategory(contacts: true, otherPrivate: true, groups: true, channels: true, sizeLimit: 3 * mb, predownload: false)))
+        let saveDownloadedPhotos = MediaAutoDownloadCategory(contacts: false, otherPrivate: false, groups: false, channels: false, sizeLimit: 0, predownload: false)
+        
+        return MediaAutoDownloadSettings(presets: presets, cellular: MediaAutoDownloadConnection(enabled: false, preset: .low, custom: nil), wifi: MediaAutoDownloadConnection(enabled: false, preset: .low, custom: nil), saveDownloadedPhotos: saveDownloadedPhotos, autoplayGifs: false, autoplayVideos: false, downloadInBackground: false)
+    }
+    
     public init(presets: MediaAutoDownloadPresets, cellular: MediaAutoDownloadConnection, wifi: MediaAutoDownloadConnection, saveDownloadedPhotos: MediaAutoDownloadCategory, autoplayGifs: Bool, autoplayVideos: Bool, downloadInBackground: Bool) {
         self.presets = presets
         self.cellular = cellular
@@ -257,14 +274,14 @@ private func presetsWithAutodownloadSettings(_ autodownloadSettings: Autodownloa
     return MediaAutoDownloadPresets(low: categoriesWithAutodownloadPreset(autodownloadSettings.lowPreset, preset: .low), medium: categoriesWithAutodownloadPreset(autodownloadSettings.mediumPreset, preset: .medium), high: categoriesWithAutodownloadPreset(autodownloadSettings.highPreset, preset: .high))
 }
 
-public func updateMediaDownloadSettingsInteractively(accountManager: AccountManager<TelegramAccountManagerTypes>, _ f: @escaping (MediaAutoDownloadSettings) -> MediaAutoDownloadSettings) -> Signal<Void, NoError> {
+public func updateMediaDownloadSettingsInteractively(accountManager: AccountManager<TelegramAccountManagerTypes>, isSupportAccount: Bool, _ f: @escaping (MediaAutoDownloadSettings) -> MediaAutoDownloadSettings) -> Signal<Void, NoError> {
     return accountManager.transaction { transaction -> Void in
         transaction.updateSharedData(ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings, { entry in
             let currentSettings: MediaAutoDownloadSettings
             if let entry = entry as? MediaAutoDownloadSettings {
                 currentSettings = entry
             } else {
-                currentSettings = MediaAutoDownloadSettings.defaultSettings
+                currentSettings = (isSupportAccount ? MediaAutoDownloadSettings.defaultSupportSettings : MediaAutoDownloadSettings.defaultSettings)
             }
             let updated = f(currentSettings)
             return updated

@@ -735,6 +735,11 @@ public class ItemListAvatarAndNameInfoItemNode: ListViewItemNode, ItemListItemNo
                                 }
                                 
                                 strongSelf.inputFirstField?.textColor = item.presentationData.theme.list.itemPrimaryTextColor
+                                if item.accountContext.account.isSupportAccount
+                                {
+                                    /** TSupport: Making First name uneditable **/
+                                    strongSelf.inputFirstField?.isUserInteractionEnabled = false
+                                }
                                 strongSelf.inputFirstField?.attributedPlaceholder = NSAttributedString(string: item.presentationData.strings.UserInfo_FirstNamePlaceholder, font: Font.regular(item.presentationData.fontSize.itemListBaseFontSize), textColor: item.presentationData.theme.list.itemPlaceholderTextColor)
                                 if strongSelf.inputFirstField?.keyboardAppearance != keyboardAppearance {
                                     strongSelf.inputFirstField?.keyboardAppearance = keyboardAppearance
@@ -766,6 +771,11 @@ public class ItemListAvatarAndNameInfoItemNode: ListViewItemNode, ItemListItemNo
                                 }
                                 
                                 strongSelf.inputSecondField?.textColor = item.presentationData.theme.list.itemPrimaryTextColor
+                                if item.accountContext.account.isSupportAccount
+                                {
+                                    /** TSupport: Making Last name uneditable **/
+                                    strongSelf.inputSecondField?.isUserInteractionEnabled = false
+                                }
                                 strongSelf.inputSecondField?.attributedPlaceholder = NSAttributedString(string: item.presentationData.strings.UserInfo_LastNamePlaceholder, font: Font.regular(item.presentationData.fontSize.itemListBaseFontSize), textColor: item.presentationData.theme.list.itemPlaceholderTextColor)
                                 if strongSelf.inputSecondField?.keyboardAppearance != keyboardAppearance {
                                     strongSelf.inputSecondField?.keyboardAppearance = keyboardAppearance

@@ -340,7 +340,7 @@ private func notificationSearchableItems(context: AccountContext, settings: Glob
         SettingsSearchableItem(id: .notifications(3), title: strings.Notifications_MessageNotificationsSound, alternate: synonyms(strings.SettingsSearch_Synonyms_Notifications_MessageNotificationsSound), icon: icon, breadcrumbs: [strings.Settings_NotificationsAndSounds, strings.Notifications_MessageNotifications], present: { context, _, present in
             
             let controller = notificationSoundSelectionController(context: context, isModal: true, currentSound: filteredGlobalSound(settings.privateChats.sound), defaultSound: nil, completion: { value in
-                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
                     var settings = settings
                     settings.privateChats.sound = value
                     return settings
@@ -359,7 +359,7 @@ private func notificationSearchableItems(context: AccountContext, settings: Glob
         }),
         SettingsSearchableItem(id: .notifications(7), title: strings.Notifications_GroupNotificationsSound, alternate: synonyms(strings.SettingsSearch_Synonyms_Notifications_GroupNotificationsSound), icon: icon, breadcrumbs: [strings.Settings_NotificationsAndSounds, strings.Notifications_GroupNotifications], present: { context, _, present in
             let controller = notificationSoundSelectionController(context: context, isModal: true, currentSound: filteredGlobalSound(settings.groupChats.sound), defaultSound: nil, completion: { value in
-                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
                     var settings = settings
                     settings.groupChats.sound = value
                     return settings
@@ -378,7 +378,7 @@ private func notificationSearchableItems(context: AccountContext, settings: Glob
         }),
         SettingsSearchableItem(id: .notifications(11), title: strings.Notifications_ChannelNotificationsSound, alternate: synonyms(strings.SettingsSearch_Synonyms_Notifications_ChannelNotificationsSound), icon: icon, breadcrumbs: [strings.Settings_NotificationsAndSounds, strings.Notifications_ChannelNotifications], present: { context, _, present in
             let controller = notificationSoundSelectionController(context: context, isModal: true, currentSound: filteredGlobalSound(settings.channels.sound), defaultSound: nil, completion: { value in
-                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+                let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
                     var settings = settings
                     settings.channels.sound = value
                     return settings
@@ -745,7 +745,7 @@ func settingsSearchableItems(context: AccountContext, notificationExceptionsList
         if let settings = view.values[PreferencesKeys.globalNotifications] as? GlobalNotificationSettings {
             viewSettings = settings.effective
         } else {
-            viewSettings = GlobalNotificationSettingsSet.defaultSettings
+            viewSettings = (context.account.isSupportAccount ? GlobalNotificationSettingsSet.defaultSupportSettings : GlobalNotificationSettingsSet.defaultSettings)
         }
         return viewSettings
     }

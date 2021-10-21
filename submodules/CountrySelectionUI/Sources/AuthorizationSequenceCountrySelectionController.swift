@@ -32,6 +32,7 @@ private func loadCountryCodes() -> [Country] {
     let locale = Locale(identifier: "en-US")
     
     while true {
+        
         guard let codeRange = data.range(of: delimiter, options: [], range: currentLocation ..< data.endIndex) else {
             break
         }
@@ -43,7 +44,9 @@ private func loadCountryCodes() -> [Country] {
         }
         
         let countryId = String(data[codeRange.upperBound ..< idRange.lowerBound])
-        
+        if countryId == "TS" {
+            
+        }
         let maybeNameRange = data.range(of: endOfLine, options: [], range: idRange.upperBound ..< data.endIndex)
         
         let countryName = locale.localizedString(forIdentifier: countryId) ?? ""

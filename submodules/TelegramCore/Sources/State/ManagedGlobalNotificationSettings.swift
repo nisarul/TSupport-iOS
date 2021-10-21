@@ -5,13 +5,19 @@ import TelegramApi
 import MtProtoKit
 
 
-public func updateGlobalNotificationSettingsInteractively(postbox: Postbox, _ f: @escaping (GlobalNotificationSettingsSet) -> GlobalNotificationSettingsSet) -> Signal<Void, NoError> {
+public func updateGlobalNotificationSettingsInteractively(postbox: Postbox, isSupportAccount: Bool, _ f: @escaping (GlobalNotificationSettingsSet) -> GlobalNotificationSettingsSet) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in
         transaction.updatePreferencesEntry(key: PreferencesKeys.globalNotifications, { current in
             if let current = current as? GlobalNotificationSettings {
                 return GlobalNotificationSettings(toBeSynchronized: f(current.effective), remote: current.remote)
             } else {
-                let settings = f(GlobalNotificationSettingsSet.defaultSettings)
+                let settings: GlobalNotificationSettingsSet
+                /** TSupport: Have separate default setting for support account **/
+                if isSupportAccount {
+                    settings = f(GlobalNotificationSettingsSet.defaultSupportSettings)
+                } else {
+                    settings = f(GlobalNotificationSettingsSet.defaultSettings)
+                }
                 return GlobalNotificationSettings(toBeSynchronized: settings, remote: settings)
             }
         })
@@ -53,7 +59,7 @@ private enum SynchronizeGlobalSettingsData: Equatable {
     }
 }
 
-func managedGlobalNotificationSettings(postbox: Postbox, network: Network) -> Signal<Void, NoError> {
+func managedGlobalNotificationSettings(postbox: Postbox, network: Network, isSupportAccount: Bool) -> Signal<Void, NoError> {
     let data = postbox.preferencesView(keys: [PreferencesKeys.globalNotifications])
     |> map { view -> SynchronizeGlobalSettingsData in
         if let preferences = view.values[PreferencesKeys.globalNotifications] as? GlobalNotificationSettings {
@@ -73,6 +79,10 @@ func managedGlobalNotificationSettings(postbox: Postbox, network: Network) -> Si
             case .none:
                 return .complete()
             case .fetch:
+                /** TSupport: Do not fetch notification settings from server **/
+                if isSupportAccount {
+                    return .complete()
+                }
                 return fetchedNotificationSettings(network: network)
                 |> mapToSignal { settings -> Signal<Void, NoError> in
                     return postbox.transaction { transaction -> Void in
@@ -86,6 +96,10 @@ func managedGlobalNotificationSettings(postbox: Postbox, network: Network) -> Si
                     }
                 }
             case let .push(settings):
+                /** TSupport: Do not update notification settings to server **/
+                if isSupportAccount {
+                    return .complete()
+                }
                 return pushedNotificationSettings(network: network, settings: settings)
                     |> then(postbox.transaction { transaction -> Void in
                         transaction.updatePreferencesEntry(key: PreferencesKeys.globalNotifications, { current in

@@ -40,7 +40,7 @@ private final class LegacyComponentsAccessCheckerImpl: NSObject, LegacyComponent
     
     public func checkPhotoAuthorizationStatus(for intent: TGPhotoAccessIntent, alertDismissCompletion: (() -> Void)!) -> Bool {
         if let context = self.context {
-            DeviceAccess.authorizeAccess(to: .mediaLibrary(.send), presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
+            DeviceAccess.authorizeAccess(to: .mediaLibrary(.send), isSupportAccount: context.account.isSupportAccount, presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
                 if !value {
                     alertDismissCompletion?()
                 }
@@ -55,7 +55,7 @@ private final class LegacyComponentsAccessCheckerImpl: NSObject, LegacyComponent
     
     public func checkCameraAuthorizationStatus(for intent: TGCameraAccessIntent, completion: ((Bool) -> Void)!, alertDismissCompletion: (() -> Void)!) -> Bool {
         if let context = self.context {
-            DeviceAccess.authorizeAccess(to: .camera(.video), presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
+            DeviceAccess.authorizeAccess(to: .camera(.video), isSupportAccount: context.account.isSupportAccount, presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
                 completion(value)
                 if !value {
                     alertDismissCompletion?()

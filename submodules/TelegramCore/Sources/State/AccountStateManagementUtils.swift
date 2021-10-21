@@ -2253,7 +2253,7 @@ private func recordPeerActivityTimestamp(peerId: PeerId, timestamp: Int32, into 
     }
 }
 
-func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes>, postbox: Postbox, accountPeerId: PeerId, mediaBox: MediaBox, encryptionProvider: EncryptionProvider, transaction: Transaction, auxiliaryMethods: AccountAuxiliaryMethods, finalState: AccountFinalState, removePossiblyDeliveredMessagesUniqueIds: [Int64: PeerId]) -> AccountReplayedFinalState? {
+func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes>, postbox: Postbox, accountPeerId: PeerId, isSupportAccount: Bool, mediaBox: MediaBox, encryptionProvider: EncryptionProvider, transaction: Transaction, auxiliaryMethods: AccountAuxiliaryMethods, finalState: AccountFinalState, removePossiblyDeliveredMessagesUniqueIds: [Int64: PeerId]) -> AccountReplayedFinalState? {
     let verified = verifyTransaction(transaction, finalState: finalState.state)
     if !verified {
         Logger.shared.log("State", "failed to verify final state")
@@ -2811,7 +2811,7 @@ func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes
                             if let current = current as? GlobalNotificationSettings {
                                 updated = current
                             } else {
-                                updated = GlobalNotificationSettings.defaultSettings
+                                updated = (isSupportAccount ? GlobalNotificationSettings.defaultSupportSettings : GlobalNotificationSettings.defaultSettings)
                             }
                             updated.remote.privateChats = notificationSettings
                             return updated
@@ -2822,7 +2822,7 @@ func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes
                             if let current = current as? GlobalNotificationSettings {
                                 updated = current
                             } else {
-                                updated = GlobalNotificationSettings.defaultSettings
+                                updated = (isSupportAccount ? GlobalNotificationSettings.defaultSupportSettings : GlobalNotificationSettings.defaultSettings)
                             }
                             updated.remote.groupChats = notificationSettings
                             return updated
@@ -2833,7 +2833,7 @@ func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes
                             if let current = current as? GlobalNotificationSettings {
                                 updated = current
                             } else {
-                                updated = GlobalNotificationSettings.defaultSettings
+                                updated = (isSupportAccount ? GlobalNotificationSettings.defaultSupportSettings : GlobalNotificationSettings.defaultSettings)
                             }
                             updated.remote.channels = notificationSettings
                             return updated
@@ -3015,7 +3015,11 @@ func replayFinalState(accountManager: AccountManager<TelegramAccountManagerTypes
             case .UpdateRecentGifs:
                 syncRecentGifs = true
             case let .UpdateChatInputState(peerId, inputState):
-                _internal_updateChatInputState(transaction: transaction, peerId: peerId, inputState: inputState)
+                print("SYD: replyFinalState: isSupportAccount: \(isSupportAccount)")
+                /** TSupport: Disable reading drafts from cloud.**/
+                if !isSupportAccount {
+                    _internal_updateChatInputState(transaction: transaction, peerId: peerId, inputState: inputState)
+                }
             case let .UpdateCall(call):
                 updatedCalls.append(call)
             case let .AddCallSignalingData(callId, data):

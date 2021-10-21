@@ -367,7 +367,7 @@ func peerInfoScreenSettingsData(context: AccountContext, peerId: PeerId, account
     if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
         notificationsAuthorizationStatus.set(
             .single(.allowed)
-                |> then(DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications)
+                |> then(DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications, isSupportAccount: context.account.isSupportAccount)
             )
         )
     }
@@ -407,7 +407,7 @@ func peerInfoScreenSettingsData(context: AccountContext, peerId: PeerId, account
             let (featuredStickerPacks, archivedStickerPacks) = stickerPacks
             
             let proxySettings: ProxySettings = sharedPreferences.entries[SharedDataKeys.proxySettings] as? ProxySettings ?? ProxySettings.defaultSettings
-            let inAppNotificationSettings: InAppNotificationSettings = sharedPreferences.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings] as? InAppNotificationSettings ?? InAppNotificationSettings.defaultSettings
+            let inAppNotificationSettings: InAppNotificationSettings = sharedPreferences.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings] as? InAppNotificationSettings ?? (context.account.isSupportAccount ? InAppNotificationSettings.defaultSupportSettings : InAppNotificationSettings.defaultSettings)
             
             let unreadTrendingStickerPacks = featuredStickerPacks.reduce(0, { count, item -> Int in
                 return item.unread ? count + 1 : count
@@ -837,6 +837,9 @@ func peerInfoScreenData(context: AccountContext, peerId: PeerId, strings: Presen
 }
 
 func canEditPeerInfo(context: AccountContext, peer: Peer?) -> Bool {
+    if context.account.isSupportAccount {
+        return false
+    }
     if context.account.peerId == peer?.id {
         return true
     }

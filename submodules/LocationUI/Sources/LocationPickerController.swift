@@ -115,7 +115,7 @@ public final class LocationPickerController: ViewController {
             guard let strongSelf = self else {
                 return
             }
-            DeviceAccess.authorizeAccess(to: .location(.live), locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .location(.live), isSupportAccount: strongSelf.context.account.isSupportAccount, locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
                 strongSelf.present(c, in: .window(.root), with: a)
             }, openSettings: {
                 strongSelf.context.sharedContext.applicationBindings.openSettings()
@@ -291,14 +291,14 @@ public final class LocationPickerController: ViewController {
         self.displayNode = LocationPickerControllerNode(context: self.context, presentationData: self.presentationData, mode: self.mode, interaction: interaction, locationManager: self.locationManager)
         self.displayNodeDidLoad()
         
-        self.permissionDisposable = (DeviceAccess.authorizationStatus(subject: .location(.send))
+        self.permissionDisposable = (DeviceAccess.authorizationStatus(subject: .location(.send), isSupportAccount: self.context.account.isSupportAccount)
         |> deliverOnMainQueue).start(next: { [weak self] next in
             guard let strongSelf = self else {
                 return
             }
             switch next {
                 case .notDetermined:
-                    DeviceAccess.authorizeAccess(to: .location(.send), locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .location(.send), isSupportAccount: strongSelf.context.account.isSupportAccount, locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
                         strongSelf.present(c, in: .window(.root), with: a)
                     }, openSettings: {
                         strongSelf.context.sharedContext.applicationBindings.openSettings()

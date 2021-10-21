@@ -9,7 +9,7 @@ import PresentationDataUtils
 import PeerInfoUI
 
 func openAddContactImpl(context: AccountContext, firstName: String = "", lastName: String = "", phoneNumber: String, label: String = "_$!<Mobile>!$_", present: @escaping (ViewController, Any?) -> Void, pushController: @escaping (ViewController) -> Void, completed: @escaping () -> Void = {}) {
-    let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
+    let _ = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount)
     |> take(1)
     |> deliverOnMainQueue).start(next: { value in
         switch value {
@@ -25,7 +25,7 @@ func openAddContactImpl(context: AccountContext, firstName: String = "", lastNam
                     }
                 }), completed: completed, cancelled: nil), ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
             case .notDetermined:
-                DeviceAccess.authorizeAccess(to: .contacts)
+                DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: context.account.isSupportAccount)
             default:
                 let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                 present(textAlertController(context: context, title: presentationData.strings.AccessDenied_Title, text: presentationData.strings.Contacts_AccessDeniedError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_NotNow, action: {}), TextAlertAction(type: .genericAction, title: presentationData.strings.AccessDenied_Settings, action: {

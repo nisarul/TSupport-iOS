@@ -14,12 +14,12 @@ func presentContactsWarningSuppressionImpl(context: AccountContext, present: (Vi
     present(textAlertController(context: context, title: presentationData.strings.Contacts_PermissionsSuppressWarningTitle, text: presentationData.strings.Contacts_PermissionsSuppressWarningText, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Contacts_PermissionsKeepDisabled, action: {
         ApplicationSpecificNotice.setPermissionWarning(accountManager: context.sharedContext.accountManager, permission: .contacts, value: Int32(Date().timeIntervalSince1970))
     }), TextAlertAction(type: .defaultAction, title: presentationData.strings.Contacts_PermissionsEnable, action: {
-        let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
+        let _ = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount)
         |> take(1)
         |> deliverOnMainQueue).start(next: { status in
             switch status {
                 case .notDetermined:
-                    DeviceAccess.authorizeAccess(to: .contacts)
+                    DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: context.account.isSupportAccount)
                 case .denied, .restricted:
                     context.sharedContext.applicationBindings.openSettings()
                 default:

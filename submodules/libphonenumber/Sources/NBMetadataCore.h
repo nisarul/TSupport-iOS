@@ -762,3 +762,6 @@
 @interface NBPhoneMetadataIL : NBPhoneMetaData
 @end
 
+@interface NBPhoneMetadataTS : NBPhoneMetaData
+@end
+

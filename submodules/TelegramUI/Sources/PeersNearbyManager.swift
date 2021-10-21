@@ -42,7 +42,7 @@ final class PeersNearbyManagerImpl: PeersNearbyManager {
             }
         })
 
-        self.accessDisposable = (DeviceAccess.authorizationStatus(applicationInForeground: nil, siriAuthorization: nil, subject: .location(.live))
+        self.accessDisposable = (DeviceAccess.authorizationStatus(applicationInForeground: nil, siriAuthorization: nil, subject: .location(.live), isSupportAccount: account.isSupportAccount)
         |> deliverOnMainQueue).start(next: { [weak self] status in
             guard let strongSelf = self else {
                 return

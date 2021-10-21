@@ -123,6 +123,80 @@ func fetchAndUpdateSupplementalCachedPeerData(peerId rawPeerId: PeerId, network:
     }
 }
 
+func _internal_fetchAndUpdateSupportCachedPeerData(accountPeerId: PeerId, peerId rawPeerId: PeerId, network: Network, postbox: Postbox) -> Signal<Bool, NoError> {
+    return postbox.combinedView(keys: [.basicPeer(rawPeerId)])
+    |> mapToSignal { views -> Signal<Bool, NoError> in
+        if accountPeerId == rawPeerId {
+            return .single(true)
+        }
+        guard let view = views.views[.basicPeer(rawPeerId)] as? BasicPeerView else {
+            return .complete()
+        }
+        guard view.peer != nil else {
+            return .complete()
+        }
+        return .single(true)
+    }
+    |> take(1)
+    |> mapToSignal { _ -> Signal<Bool, NoError> in
+        return postbox.transaction { transaction -> (Api.InputUser?, Peer?, PeerId) in
+            guard let rawPeer = transaction.getPeer(rawPeerId) else {
+                if rawPeerId == accountPeerId {
+                    return (.inputUserSelf, transaction.getPeer(rawPeerId), rawPeerId)
+                } else {
+                    return (nil, nil, rawPeerId)
+                }
+            }
+
+            let peer: Peer
+            if let secretChat = rawPeer as? TelegramSecretChat {
+                guard let user = transaction.getPeer(secretChat.regularPeerId) else {
+                    return (nil, nil, rawPeerId)
+                }
+                peer = user
+            } else {
+                peer = rawPeer
+            }
+
+            if rawPeerId == accountPeerId {
+                return (.inputUserSelf, transaction.getPeer(rawPeerId), rawPeerId)
+            } else {
+                return (apiInputUser(peer), peer, peer.id)
+            }
+        }
+        |> mapToSignal { inputUser, maybePeer, peerId -> Signal<Bool, NoError> in
+            if let inputUser = inputUser {
+                return network.request(Api.functions.help.getUserInfo(userId: inputUser))
+                |> retryRequest
+                |> mapToSignal { result -> Signal<Bool, NoError> in
+                    return postbox.transaction { transaction -> Bool in
+                        transaction.updatePeerCachedData(peerIds: [peerId], update: { peerId, current in
+                            let previous: CachedUserData
+                            if let current = current as? CachedUserData {
+                                previous = current
+                            } else {
+                                previous = CachedUserData()
+                            }
+                            print("SYD: \(result)")
+                            switch result {
+                                case let .userInfo(userInfo):
+                                    print("SYD: User Info: \(userInfo)")
+                                    let supportInfo = SupportInfo(message: userInfo.message, author: userInfo.author, date: Date.init(timeIntervalSince1970: TimeInterval(userInfo.date)))
+                                    return previous.withUpdatedSupportInfo(supportInfo)
+                                case .userInfoEmpty:
+                                    return previous.withUpdatedSupportInfo(SupportInfo())
+                            }
+                        })
+                        return true
+                    }
+                }
+            } else {
+                return .single(false)
+            }
+        }
+    }
+}
+
 func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPeerId: PeerId, network: Network, postbox: Postbox) -> Signal<Bool, NoError> {
     return postbox.combinedView(keys: [.basicPeer(rawPeerId)])
     |> mapToSignal { views -> Signal<Bool, NoError> in

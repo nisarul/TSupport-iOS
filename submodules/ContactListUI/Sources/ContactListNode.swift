@@ -897,7 +897,7 @@ public final class ContactListNode: ASDisplayNode {
         
         let contactsAuthorization = Promise<AccessType>()
         contactsAuthorization.set(.single(.allowed)
-        |> then(DeviceAccess.authorizationStatus(subject: .contacts)))
+                                    |> then(DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount)))
         
         let contactsWarningSuppressed = Promise<(Bool, Bool)>()
         contactsWarningSuppressed.set(.single((false, false))
@@ -1420,12 +1420,12 @@ public final class ContactListNode: ASDisplayNode {
         }
         
         authorizeImpl = {
-            let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
+            let _ = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount)
             |> take(1)
             |> deliverOnMainQueue).start(next: { status in
                 switch status {
                     case .notDetermined:
-                        DeviceAccess.authorizeAccess(to: .contacts)
+                        DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: context.account.isSupportAccount)
                     case .denied, .restricted:
                         context.sharedContext.applicationBindings.openSettings()
                     default:

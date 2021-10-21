@@ -1051,7 +1051,7 @@ final class PeerInfoHeaderNavigationButtonContainerNode: ASDisplayNode {
         super.init()
     }
     
-    func update(size: CGSize, presentationData: PresentationData, buttons: [PeerInfoHeaderNavigationButtonSpec], expandFraction: CGFloat, transition: ContainedViewLayoutTransition) {
+    func update(size: CGSize, presentationData: PresentationData, buttons: [PeerInfoHeaderNavigationButtonSpec], expandFraction: CGFloat, transition: ContainedViewLayoutTransition, isSupportAccount: Bool) {
         let maximumExpandOffset: CGFloat = 14.0
         let expandOffset: CGFloat = -expandFraction * maximumExpandOffset
         if self.currentButtons != buttons {
@@ -1070,8 +1070,12 @@ final class PeerInfoHeaderNavigationButtonContainerNode: ASDisplayNode {
                     self.buttonNodes[spec.key] = buttonNode
                     self.addSubnode(buttonNode)
                     buttonNode.isWhite = self.isWhite
-                    buttonNode.action = { [weak self] in
-                        self?.performAction?(spec.key)
+                    if isSupportAccount && spec.key == .edit {
+                        /** TSupport: Disable editing profile button from settings screen **/
+                    } else {
+                        buttonNode.action = { [weak self] in
+                            self?.performAction?(spec.key)
+                        }
                     }
                 }
                 let buttonSize = buttonNode.update(key: spec.key, presentationData: presentationData, height: size.height)

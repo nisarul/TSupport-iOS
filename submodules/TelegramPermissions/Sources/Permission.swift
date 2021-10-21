@@ -72,11 +72,11 @@ public enum PermissionState: Equatable {
 }
 
 public func requiredPermissions(context: AccountContext) -> Signal<(contacts: PermissionState, notifications: PermissionState, cellularData: PermissionState, siri: PermissionState), NoError> {
-    return combineLatest(DeviceAccess.authorizationStatus(subject: .contacts), DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications), DeviceAccess.authorizationStatus(siriAuthorization: {
+    return combineLatest(DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount), DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications, isSupportAccount: context.account.isSupportAccount), DeviceAccess.authorizationStatus(siriAuthorization: {
         return context.sharedContext.applicationBindings.siriAuthorization()
-    }, subject: .cellularData), DeviceAccess.authorizationStatus(siriAuthorization: {
+    }, subject: .cellularData, isSupportAccount: context.account.isSupportAccount), DeviceAccess.authorizationStatus(siriAuthorization: {
         return context.sharedContext.applicationBindings.siriAuthorization()
-    }, subject: .siri))
+    }, subject: .siri, isSupportAccount: context.account.isSupportAccount))
     |> map { contactsStatus, notificationsStatus, cellularDataStatus, siriStatus in
         return (.contacts(status: PermissionRequestStatus(accessType: contactsStatus)), .notifications(status: PermissionRequestStatus(accessType: notificationsStatus)), .cellularData(status: PermissionRequestStatus(accessType: cellularDataStatus)), .siri(status: PermissionRequestStatus(accessType: siriStatus)))
     }

@@ -95,10 +95,13 @@ public final class TelegramRootController: NavigationController {
         contactsController.switchToChatsController = {  [weak self] in
             self?.openChatsController(activateSearch: false)
         }
-        controllers.append(contactsController)
-        
-        if showCallsTab {
-            controllers.append(callListController)
+        /** TSupport: Hiding Contacts and Calls tab on home screen **/
+        if !self.context.account.isSupportAccount {
+            controllers.append(contactsController)
+            
+            if showCallsTab {
+                controllers.append(callListController)
+            }
         }
         controllers.append(chatListController)
         

@@ -42,6 +42,10 @@ public struct InAppNotificationSettings: PreferencesEntry, Equatable {
         return InAppNotificationSettings(playSounds: true, vibrate: false, displayPreviews: true, totalUnreadCountDisplayStyle: .filtered, totalUnreadCountDisplayCategory: .messages, totalUnreadCountIncludeTags: .all, displayNameOnLockscreen: true, displayNotificationsFromAllAccounts: true)
     }
     
+    public static var defaultSupportSettings: InAppNotificationSettings {
+        return InAppNotificationSettings(playSounds: false, vibrate: false, displayPreviews: false, totalUnreadCountDisplayStyle: .filtered, totalUnreadCountDisplayCategory: .messages, totalUnreadCountIncludeTags: .all, displayNameOnLockscreen: false, displayNotificationsFromAllAccounts: true)
+    }
+    
     public init(playSounds: Bool, vibrate: Bool, displayPreviews: Bool, totalUnreadCountDisplayStyle: TotalUnreadCountDisplayStyle, totalUnreadCountDisplayCategory: TotalUnreadCountDisplayCategory, totalUnreadCountIncludeTags: PeerSummaryCounterTags, displayNameOnLockscreen: Bool, displayNotificationsFromAllAccounts: Bool) {
         self.playSounds = playSounds
         self.vibrate = vibrate
@@ -103,14 +107,15 @@ public struct InAppNotificationSettings: PreferencesEntry, Equatable {
     }
 }
 
-public func updateInAppNotificationSettingsInteractively(accountManager: AccountManager<TelegramAccountManagerTypes>, _ f: @escaping (InAppNotificationSettings) -> InAppNotificationSettings) -> Signal<Void, NoError> {
+public func updateInAppNotificationSettingsInteractively(accountManager: AccountManager<TelegramAccountManagerTypes>, isSupportAccount: Bool, _ f: @escaping (InAppNotificationSettings) -> InAppNotificationSettings) -> Signal<Void, NoError> {
     return accountManager.transaction { transaction -> Void in
         transaction.updateSharedData(ApplicationSpecificSharedDataKeys.inAppNotificationSettings, { entry in
             let currentSettings: InAppNotificationSettings
             if let entry = entry as? InAppNotificationSettings {
                 currentSettings = entry
             } else {
-                currentSettings = InAppNotificationSettings.defaultSettings
+                /** TSupport: Have seaprate default settings for support acounts **/
+                currentSettings = (isSupportAccount ? InAppNotificationSettings.defaultSupportSettings : InAppNotificationSettings.defaultSettings)
             }
             return f(currentSettings)
         })

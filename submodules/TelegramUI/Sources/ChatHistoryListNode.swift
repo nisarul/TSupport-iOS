@@ -1161,7 +1161,9 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
                 if apply {
                     switch chatLocation {
                     case .peer, .replyThread:
-                        if !context.sharedContext.immediateExperimentalUISettings.skipReadHistory {
+                        if !context.sharedContext.immediateExperimentalUISettings.skipReadHistory &&
+                            !context.account.isSupportAccount {
+                            /** TSupport: Mark conversation as read only for non-support accounts **/
                             context.applyMaxReadIndex(for: chatLocation, contextHolder: chatLocationContextHolder, messageIndex: messageIndex)
                         }
                     }

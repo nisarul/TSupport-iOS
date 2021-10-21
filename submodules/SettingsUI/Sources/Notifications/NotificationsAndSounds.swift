@@ -834,12 +834,12 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
     }, pushController: { controller in
         pushControllerImpl?(controller)
     }, soundSelectionDisposable: MetaDisposable(), authorizeNotifications: {
-        let _ = (DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications)
+        let _ = (DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications, isSupportAccount: context.account.isSupportAccount)
         |> take(1)
         |> deliverOnMainQueue).start(next: { status in
             switch status {
                 case .notDetermined:
-                    DeviceAccess.authorizeAccess(to: .notifications, registerForNotifications: { result in
+                    DeviceAccess.authorizeAccess(to: .notifications, isSupportAccount: context.account.isSupportAccount, registerForNotifications: { result in
                         context.sharedContext.applicationBindings.registerForNotifications(result)
                     })
                 case .denied, .restricted:
@@ -859,85 +859,85 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
             context.sharedContext.applicationBindings.openSettings()
         })]), nil)
     }, updateMessageAlerts: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.privateChats.enabled = value
             return settings
         }).start()
     }, updateMessagePreviews: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.privateChats.displayPreviews = value
             return settings
         }).start()
     }, updateMessageSound: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.privateChats.sound = value
             return settings
         }).start()
     }, updateGroupAlerts: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.groupChats.enabled = value
             return settings
         }).start()
     }, updateGroupPreviews: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.groupChats.displayPreviews = value
             return settings
         }).start()
     }, updateGroupSound: {value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.groupChats.sound = value
             return settings
         }).start()
     }, updateChannelAlerts: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.channels.enabled = value
             return settings
         }).start()
     }, updateChannelPreviews: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.channels.displayPreviews = value
             return settings
         }).start()
     }, updateChannelSound: {value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.channels.sound = value
             return settings
         }).start()
     }, updateInAppSounds: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.playSounds = value
             return settings
         }).start()
     }, updateInAppVibration: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.vibrate = value
             return settings
         }).start()
     }, updateInAppPreviews: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.displayPreviews = value
             return settings
         }).start()
     }, updateDisplayNameOnLockscreen: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.displayNameOnLockscreen = value
             return settings
         }).start()
     }, updateIncludeTag: { tag, value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var currentSettings = CounterTagSettings(summaryTags: settings.totalUnreadCountIncludeTags)
             if !value {
                 currentSettings.remove(tag)
@@ -949,7 +949,7 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
             return settings
         }).start()
     }, updateTotalUnreadCountCategory: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.totalUnreadCountDisplayCategory = value ? .messages : .chats
             return settings
@@ -964,8 +964,8 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
                 let modifyPeers = context.account.postbox.transaction { transaction -> Void in
                     transaction.resetAllPeerNotificationSettings(TelegramPeerNotificationSettings.defaultSettings)
                 }
-                let updateGlobal = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { _ in
-                    return GlobalNotificationSettingsSet.defaultSettings
+                let updateGlobal = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { _ in
+                    return (context.account.isSupportAccount ? GlobalNotificationSettingsSet.defaultSupportSettings : GlobalNotificationSettingsSet.defaultSettings)
                 })
                 let reset = resetPeerNotificationSettings(network: context.account.network)
                 let signal = combineLatest(modifyPeers, updateGlobal, reset)
@@ -991,13 +991,13 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
     }, openAppSettings: {
         context.sharedContext.applicationBindings.openSettings()
     }, updateJoinedNotifications: { value in
-        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, { settings in
+        let _ = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.contactsJoined = value
             return settings
         }).start()
     }, updateNotificationsFromAllAccounts: { value in
-        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateInAppNotificationSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             settings.displayNotificationsFromAllAccounts = value
             return settings
@@ -1073,21 +1073,21 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
     }
     |> distinctUntilChanged
     
-    let signal = combineLatest(context.sharedContext.presentationData, sharedData, preferences, notificationExceptions.get(), DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications), notificationsWarningSuppressed.get(), hasMoreThanOneAccount)
+    let signal = combineLatest(context.sharedContext.presentationData, sharedData, preferences, notificationExceptions.get(), DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications, isSupportAccount: context.account.isSupportAccount), notificationsWarningSuppressed.get(), hasMoreThanOneAccount)
         |> map { presentationData, sharedData, view, exceptions, authorizationStatus, warningSuppressed, hasMoreThanOneAccount -> (ItemListControllerState, (ItemListNodeState, Any)) in
             
             let viewSettings: GlobalNotificationSettingsSet
             if let settings = view.values[PreferencesKeys.globalNotifications] as? GlobalNotificationSettings {
                 viewSettings = settings.effective
             } else {
-                viewSettings = GlobalNotificationSettingsSet.defaultSettings
+                viewSettings = (context.account.isSupportAccount ? GlobalNotificationSettingsSet.defaultSupportSettings : GlobalNotificationSettingsSet.defaultSettings)
             }
             
             let inAppSettings: InAppNotificationSettings
             if let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings] as? InAppNotificationSettings {
                 inAppSettings = settings
             } else {
-                inAppSettings = InAppNotificationSettings.defaultSettings
+                inAppSettings = (context.account.isSupportAccount ? InAppNotificationSettings.defaultSupportSettings : InAppNotificationSettings.defaultSettings)
             }
             
             let entries = notificationsAndSoundsEntries(authorizationStatus: authorizationStatus, warningSuppressed: warningSuppressed, globalSettings: viewSettings, inAppSettings: inAppSettings, exceptions: exceptions, presentationData: presentationData, hasMoreThanOneAccount: hasMoreThanOneAccount)

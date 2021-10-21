@@ -15,6 +15,9 @@ public final class InteractivePhoneFormatter {
         if let string = string, string.hasPrefix("+383") {
             regionPrefix = "+383"
         }
+        else if let string = string, string.hasPrefix("+42") {
+            regionPrefix = "+42"
+        }
         return (regionPrefix, string ?? "")
     }
 }

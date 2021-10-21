@@ -222,7 +222,7 @@ public final class LocationViewController: ViewController {
                     )
                 }
             } else {
-                DeviceAccess.authorizeAccess(to: .location(.live), locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
+                DeviceAccess.authorizeAccess(to: .location(.live), isSupportAccount: strongSelf.context.account.isSupportAccount, locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
                     strongSelf.present(c, in: .window(.root), with: a)
                 }, openSettings: {
                     context.sharedContext.applicationBindings.openSettings()
@@ -322,7 +322,7 @@ public final class LocationViewController: ViewController {
             guard let strongSelf = self else {
                 return
             }
-            DeviceAccess.authorizeAccess(to: .location(.live), locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .location(.live), isSupportAccount: strongSelf.context.account.isSupportAccount, locationManager: strongSelf.locationManager, presentationData: strongSelf.presentationData, present: { c, a in
                 strongSelf.present(c, in: .window(.root), with: a)
             }, openSettings: {
                 context.sharedContext.applicationBindings.openSettings()

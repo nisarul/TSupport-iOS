@@ -73,7 +73,7 @@ private func withTakenOperation(postbox: Postbox, peerId: PeerId, tag: PeerOpera
     } |> switchToLatest
 }
 
-func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Network) -> Signal<Bool, NoError> {
+func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Network, isSupportAccount: Bool) -> Signal<Bool, NoError> {
     return Signal { subscriber in
         let hasRunningOperations = ValuePromise<Bool>(false, ignoreRepeated: true)
         let tag: PeerOperationLogTag = OperationLogTags.SynchronizeChatInputStates
@@ -93,7 +93,7 @@ func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Netwo
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tag: tag, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeChatInputStateOperation {
-                            return synchronizeChatInputState(transaction: transaction, postbox: postbox, network: network, peerId: entry.peerId, operation: operation)
+                            return synchronizeChatInputState(transaction: transaction, postbox: postbox, network: network, peerId: entry.peerId, operation: operation, isSupportAccount: isSupportAccount)
                         } else {
                             assertionFailure()
                         }
@@ -125,7 +125,11 @@ func managedSynchronizeChatInputStateOperations(postbox: Postbox, network: Netwo
     }
 }
 
-private func synchronizeChatInputState(transaction: Transaction, postbox: Postbox, network: Network, peerId: PeerId, operation: SynchronizeChatInputStateOperation) -> Signal<Void, NoError> {
+private func synchronizeChatInputState(transaction: Transaction, postbox: Postbox, network: Network, peerId: PeerId, operation: SynchronizeChatInputStateOperation, isSupportAccount: Bool) -> Signal<Void, NoError> {
+    if isSupportAccount {
+        /** TSupport: Disable syncing cloud drafts **/
+        return .complete()
+    }
     var inputState: SynchronizeableChatInputState?
     if let peerChatInterfaceState = transaction.getPeerChatInterfaceState(peerId), let data = peerChatInterfaceState.data {
         inputState = (try? AdaptedPostboxDecoder().decode(InternalChatInterfaceState.self, from: data))?.synchronizeableInputState

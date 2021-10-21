@@ -590,7 +590,7 @@ final class CallControllerNode: ViewControllerTracingNode, CallControllerNodePro
                 if isScreencastActive {
                     (strongSelf.call as! PresentationCallImpl).disableScreencast()
                 } else if strongSelf.outgoingVideoNodeValue == nil {
-                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), onlyCheck: true, presentationData: strongSelf.presentationData, present: { [weak self] c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: account.isSupportAccount, onlyCheck: true, presentationData: strongSelf.presentationData, present: { [weak self] c, a in
                         if let strongSelf = self {
                             strongSelf.present?(c)
                         }

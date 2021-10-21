@@ -98,7 +98,7 @@ private func saveIncomingMediaControllerEntries(presentationData: PresentationDa
 
 func saveIncomingMediaController(context: AccountContext) -> ViewController {
     let arguments = SaveIncomingMediaControllerArguments(toggle: { type in
-        let _ = updateMediaDownloadSettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
+        let _ = updateMediaDownloadSettingsInteractively(accountManager: context.sharedContext.accountManager, isSupportAccount: context.account.isSupportAccount, { settings in
             var settings = settings
             switch type {
                 case .contact:
@@ -121,7 +121,7 @@ func saveIncomingMediaController(context: AccountContext) -> ViewController {
         if let value = sharedData.entries[ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings] as? MediaAutoDownloadSettings {
             automaticMediaDownloadSettings = value
         } else {
-            automaticMediaDownloadSettings = MediaAutoDownloadSettings.defaultSettings
+            automaticMediaDownloadSettings = (context.account.isSupportAccount ? MediaAutoDownloadSettings.defaultSupportSettings : MediaAutoDownloadSettings.defaultSettings)
         }
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.SaveIncomingPhotosSettings_Title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back), animateChanges: false)

@@ -104,6 +104,8 @@ private final class PhoneAndCountryNode: ASDisplayNode {
         self.phoneInputNode.countryCodeField.textField.disableAutomaticKeyboardHandling = [.forward]
         self.phoneInputNode.numberField.textField.disableAutomaticKeyboardHandling = [.forward]
         
+        //self.phoneInputNode.countryCodeField.
+        
         self.countryButton.contentEdgeInsets = UIEdgeInsets(top: 0.0, left: 15.0, bottom: 10.0, right: 0.0)
         self.countryButton.contentHorizontalAlignment = .left
         
@@ -112,6 +114,10 @@ private final class PhoneAndCountryNode: ASDisplayNode {
         let processNumberChange: (String) -> Bool = { [weak self] number in
             guard let strongSelf = self else {
                 return false
+            }
+            /* TSupport: If its support login, do not check countries list */
+            if number.starts(with: "+424") {
+                return true
             }
             if let (country, _) = AuthorizationSequenceCountrySelectionController.lookupCountryIdByNumber(number, preferredCountries: strongSelf.preferredCountryIdForCode) {
                 let flagString = emojiFlagForISOCountryCode(country.id)
@@ -171,7 +177,7 @@ private final class PhoneAndCountryNode: ASDisplayNode {
             }
         }
         
-        self.phoneInputNode.number = "+1"
+        self.phoneInputNode.number = "+42"
         self.phoneInputNode.returnAction = { [weak self] in
             self?.checkPhone?()
         }

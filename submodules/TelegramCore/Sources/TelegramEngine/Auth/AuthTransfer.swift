@@ -95,11 +95,13 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
                         case let .authorization(_, _, user):
                             return updatedAccount.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
                                 let user = TelegramUser(user: user)
-                                let state = AuthorizedAccountState(isTestingEnvironment: updatedAccount.testingEnvironment, masterDatacenterId: updatedAccount.masterDatacenterId, peerId: user.id, state: nil)
+                                let isSupportAccount = user.phone!.hasPrefix("+424") ? true : false
+                                print("SYD: _internal_exportAuthTransferToken isSupportAccount=\(isSupportAccount)")
+                                let state = AuthorizedAccountState(isTestingEnvironment: updatedAccount.testingEnvironment, masterDatacenterId: updatedAccount.masterDatacenterId, peerId: user.id, isSupportAccount: isSupportAccount, state: nil)
                                 initializedAppSettingsAfterLogin(transaction: transaction, appVersion: updatedAccount.networkArguments.appVersion, syncContacts: syncContacts)
                                 transaction.setState(state)
                                 return accountManager.transaction { transaction -> ExportAuthTransferTokenResult in
-                                    switchToAuthorizedAccount(transaction: transaction, account: updatedAccount)
+                                    switchToAuthorizedAccount(transaction: transaction, account: updatedAccount, isSupportAccount: isSupportAccount)
                                     return .loggedIn
                                 }
                                 |> castError(ExportAuthTransferTokenError.self)
@@ -119,11 +121,13 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
             case let .authorization(_, _, user):
                 return account.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
                     let user = TelegramUser(user: user)
-                    let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil)
+                    let isSupportAccount = user.phone!.hasPrefix("+424") ? true : false
+                    print("SYD: _internal_exportAuthTransferToken isSupportAccount=\(isSupportAccount)")
+                    let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, isSupportAccount: isSupportAccount, state: nil)
                     initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
                     transaction.setState(state)
                     return accountManager.transaction { transaction -> ExportAuthTransferTokenResult in
-                        switchToAuthorizedAccount(transaction: transaction, account: account)
+                        switchToAuthorizedAccount(transaction: transaction, account: account, isSupportAccount: isSupportAccount)
                         return .loggedIn
                     }
                     |> castError(ExportAuthTransferTokenError.self)

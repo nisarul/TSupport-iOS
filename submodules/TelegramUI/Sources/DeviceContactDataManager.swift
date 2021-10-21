@@ -347,7 +347,7 @@ private final class DeviceContactDataManagerPrivateImpl {
     
     init(queue: Queue) {
         self.queue = queue
-        self.accessDisposable = (DeviceAccess.authorizationStatus(subject: .contacts)
+        self.accessDisposable = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: false)
         |> delay(2.0, queue: .mainQueue())
         |> deliverOn(self.queue)).start(next: { [weak self] authorizationStatus in
             guard let strongSelf = self, authorizationStatus != .notDetermined else {

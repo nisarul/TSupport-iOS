@@ -504,6 +504,7 @@ private enum PeerInfoMemberAction {
 
 private enum PeerInfoContextSubject {
     case bio
+    case supportInfo
     case phone(String)
     case link
 }
@@ -685,40 +686,46 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
         setPhotoTitle = presentationData.strings.Settings_SetProfilePhotoOrVideo
         displaySetPhoto = true
     }
-    if displaySetPhoto {
-        items[.edit]!.append(PeerInfoScreenActionItem(id: 0, text: setPhotoTitle, icon: UIImage(bundleImageName: "Settings/SetAvatar"), action: {
-            interaction.openSettings(.avatar)
-        }))
-    }
-    if let peer = data.peer, (peer.addressName ?? "").isEmpty {
-        items[.edit]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_SetUsername, icon: UIImage(bundleImageName: "Settings/SetUsername"), action: {
-            interaction.openSettings(.username)
-        }))
+    if !context.account.isSupportAccount {
+        /** TSupport: Disable setting avatar and username for support account **/
+        if displaySetPhoto {
+            items[.edit]!.append(PeerInfoScreenActionItem(id: 0, text: setPhotoTitle, icon: UIImage(bundleImageName: "Settings/SetAvatar"), action: {
+                interaction.openSettings(.avatar)
+            }))
+        }
+        if let peer = data.peer, (peer.addressName ?? "").isEmpty {
+            items[.edit]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_SetUsername, icon: UIImage(bundleImageName: "Settings/SetUsername"), action: {
+                interaction.openSettings(.username)
+            }))
+        }
     }
     
     if let settings = data.globalSettings {
-        if settings.suggestPhoneNumberConfirmation, let peer = data.peer as? TelegramUser {
-            let phoneNumber = formatPhoneNumber(peer.phone ?? "")
-            items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
-                if case .tap = link {
-                    interaction.openFaq(presentationData.strings.Settings_CheckPhoneNumberFAQAnchor)
-                }
-            }))
-            items[.phone]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_KeepPhoneNumber(phoneNumber).string, action: {
-                let _ = dismissServerProvidedSuggestion(account: context.account, suggestion: .validatePhoneNumber).start()
-            }))
-            items[.phone]!.append(PeerInfoScreenActionItem(id: 2, text: presentationData.strings.Settings_ChangePhoneNumber, action: {
-                interaction.openSettings(.phoneNumber)
-            }))
-        } else if settings.suggestPasswordConfirmation {
-            items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPasswordTitle, text: .markdown(presentationData.strings.Settings_CheckPasswordText), linkAction: { _ in
-            }))
-            items[.phone]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_KeepPassword, action: {
-                let _ = dismissServerProvidedSuggestion(account: context.account, suggestion: .validatePassword).start()
-            }))
-            items[.phone]!.append(PeerInfoScreenActionItem(id: 2, text: presentationData.strings.Settings_TryEnterPassword, action: {
-                interaction.openSettings(.rememberPassword)
-            }))
+        if !context.account.isSupportAccount {
+            /** TSupport: Do not suggest phone number confirmation or password confirmation for support accounts **/
+            if settings.suggestPhoneNumberConfirmation, let peer = data.peer as? TelegramUser {
+                let phoneNumber = formatPhoneNumber(peer.phone ?? "")
+                items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
+                    if case .tap = link {
+                        interaction.openFaq(presentationData.strings.Settings_CheckPhoneNumberFAQAnchor)
+                    }
+                }))
+                items[.phone]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_KeepPhoneNumber(phoneNumber).string, action: {
+                    let _ = dismissServerProvidedSuggestion(account: context.account, suggestion: .validatePhoneNumber).start()
+                }))
+                items[.phone]!.append(PeerInfoScreenActionItem(id: 2, text: presentationData.strings.Settings_ChangePhoneNumber, action: {
+                    interaction.openSettings(.phoneNumber)
+                }))
+            } else if settings.suggestPasswordConfirmation {
+                items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPasswordTitle, text: .markdown(presentationData.strings.Settings_CheckPasswordText), linkAction: { _ in
+                }))
+                items[.phone]!.append(PeerInfoScreenActionItem(id: 1, text: presentationData.strings.Settings_KeepPassword, action: {
+                    let _ = dismissServerProvidedSuggestion(account: context.account, suggestion: .validatePassword).start()
+                }))
+                items[.phone]!.append(PeerInfoScreenActionItem(id: 2, text: presentationData.strings.Settings_TryEnterPassword, action: {
+                    interaction.openSettings(.rememberPassword)
+                }))
+            }
         }
         
         if !settings.accountsAndPeers.isEmpty {
@@ -761,28 +768,30 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
             }))
         }
     }
-    
-    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {
-        interaction.openSettings(.savedMessages)
-    }))
-    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.CallSettings_RecentCalls, icon: PresentationResourcesSettings.recentCalls, action: {
-        interaction.openSettings(.recentCalls)
-    }))
-    
-    let devicesLabel: String
-    if let settings = data.globalSettings, let otherSessionsCount = settings.otherSessionsCount {
-        if settings.enableQRLogin {
-            devicesLabel = otherSessionsCount == 0 ? presentationData.strings.Settings_AddDevice : "\(otherSessionsCount + 1)"
+    /** TSupport: Disabling 'Saved Messages', 'Recent Calls' and 'Devices' settings for support accounts **/
+    if !context.account.isSupportAccount {
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {
+            interaction.openSettings(.savedMessages)
+        }))
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.CallSettings_RecentCalls, icon: PresentationResourcesSettings.recentCalls, action: {
+            interaction.openSettings(.recentCalls)
+        }))
+        
+        let devicesLabel: String
+        if let settings = data.globalSettings, let otherSessionsCount = settings.otherSessionsCount {
+            if settings.enableQRLogin {
+                devicesLabel = otherSessionsCount == 0 ? presentationData.strings.Settings_AddDevice : "\(otherSessionsCount + 1)"
+            } else {
+                devicesLabel = otherSessionsCount == 0 ? "" : "\(otherSessionsCount + 1)"
+            }
         } else {
-            devicesLabel = otherSessionsCount == 0 ? "" : "\(otherSessionsCount + 1)"
+            devicesLabel = ""
         }
-    } else {
-        devicesLabel = ""
+        
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 2, label: .text(devicesLabel), text: presentationData.strings.Settings_Devices, icon: PresentationResourcesSettings.devices, action: {
+            interaction.openSettings(.devices)
+        }))
     }
-    
-    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 2, label: .text(devicesLabel), text: presentationData.strings.Settings_Devices, icon: PresentationResourcesSettings.devices, action: {
-        interaction.openSettings(.devices)
-    }))
     items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 3, text: presentationData.strings.Settings_ChatFolders, icon: PresentationResourcesSettings.chatFolders, action: {
         interaction.openSettings(.chatFolders)
     }))
@@ -834,15 +843,18 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
         }
     }
     
-    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_Support, icon: PresentationResourcesSettings.support, action: {
-        interaction.openSettings(.support)
-    }))
-    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_FAQ, icon: PresentationResourcesSettings.faq, action: {
-        interaction.openSettings(.faq)
-    }))
-    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
-        interaction.openSettings(.tips)
-    }))
+    /** TSupport: Do not display 'Ask a Question', 'Telegram FAQ' and 'Telegram Features' for Support Accounts **/
+    if !context.account.isSupportAccount {
+        items[.support]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_Support, icon: PresentationResourcesSettings.support, action: {
+            interaction.openSettings(.support)
+        }))
+        items[.support]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_FAQ, icon: PresentationResourcesSettings.faq, action: {
+            interaction.openSettings(.faq)
+        }))
+        items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
+            interaction.openSettings(.tips)
+        }))
+    }
     
     var result: [(AnyHashable, [PeerInfoScreenItem])] = []
     for section in SettingsSection.allCases {
@@ -942,6 +954,9 @@ private func infoItems(data: PeerInfoScreenData?, context: AccountContext, prese
     let bioContextAction: (ASDisplayNode) -> Void = { sourceNode in
         interaction.openPeerInfoContextMenu(.bio, sourceNode)
     }
+    let supportInfoContextAction: (ASDisplayNode) -> Void = { sourceNode in
+        interaction.openPeerInfoContextMenu(.supportInfo, sourceNode)
+    }
     let bioLinkAction: (TextLinkItemActionType, TextLinkItem) -> Void = { action, item in
         interaction.performBioLinkAction(action, item)
     }
@@ -971,6 +986,13 @@ private func infoItems(data: PeerInfoScreenData?, context: AccountContext, prese
             }))
         }
         if let cachedData = data.cachedData as? CachedUserData {
+            if let supportInfo = cachedData.supportInfo, !supportInfo.message.isEmpty {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "dd.MM.yy, h:mm a"
+                items[.peerInfo]!.append(PeerInfoScreenLabeledValueItem(id: 30, label: presentationData.strings.Profile_SupportInfo+" ("+supportInfo.author+", "+dateFormatter.string(from: supportInfo.date)+")", text: supportInfo.message, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: []), action: nil, longTapAction: bioContextAction, linkItemAction: bioLinkAction, requestLayout: {
+                    interaction.requestLayout()
+                }))
+            }
             if user.isFake {
                 items[.peerInfo]!.append(PeerInfoScreenLabeledValueItem(id: 0, label: user.botInfo == nil ? presentationData.strings.Profile_About : presentationData.strings.Profile_BotInfo, text: user.botInfo != nil ? presentationData.strings.UserInfo_FakeBotWarning : presentationData.strings.UserInfo_FakeUserWarning, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: user.botInfo != nil ? enabledPrivateBioEntities : []), action: nil, requestLayout: {
                     interaction.requestLayout()
@@ -2186,7 +2208,7 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
         }, commitEmojiInteraction: { _, _, _, _ in
         }, requestMessageUpdate: { _ in
         }, cancelInteractiveKeyboardGestures: {
-        }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
+        }, automaticMediaDownloadSettings: (context.account.isSupportAccount ? MediaAutoDownloadSettings.defaultSupportSettings : MediaAutoDownloadSettings.defaultSettings),
            pollActionState: ChatInterfacePollActionState(), stickerSettings: ChatInterfaceStickerSettings(loopAnimatedStickers: false), presentationContext: ChatPresentationContext(backgroundNode: nil))
         self.hiddenMediaDisposable = context.sharedContext.mediaManager.galleryHiddenMediaManager.hiddenIds().start(next: { [weak self] ids in
             guard let strongSelf = self else {
@@ -4121,7 +4143,7 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
         let peerId = self.peerId
         let _ = (self.context.account.postbox.transaction { transaction -> (TelegramPeerNotificationSettings, GlobalNotificationSettings) in
             let peerSettings: TelegramPeerNotificationSettings = (transaction.getPeerNotificationSettings(peerId) as? TelegramPeerNotificationSettings) ?? TelegramPeerNotificationSettings.defaultSettings
-            let globalSettings: GlobalNotificationSettings = (transaction.getPreferencesEntry(key: PreferencesKeys.globalNotifications) as? GlobalNotificationSettings) ?? GlobalNotificationSettings.defaultSettings
+            let globalSettings: GlobalNotificationSettings = (transaction.getPreferencesEntry(key: PreferencesKeys.globalNotifications) as? GlobalNotificationSettings) ?? (self.context.account.isSupportAccount ? GlobalNotificationSettings.defaultSupportSettings : GlobalNotificationSettings.defaultSettings)
             return (peerSettings, globalSettings)
         }
         |> deliverOnMainQueue).start(next: { [weak self] peerSettings, globalSettings in
@@ -4155,7 +4177,7 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
         let peerId = self.peerId
         let _ = (self.context.account.postbox.transaction { transaction -> (TelegramPeerNotificationSettings, GlobalNotificationSettings) in
             let peerSettings: TelegramPeerNotificationSettings = (transaction.getPeerNotificationSettings(peerId) as? TelegramPeerNotificationSettings) ?? TelegramPeerNotificationSettings.defaultSettings
-            let globalSettings: GlobalNotificationSettings = (transaction.getPreferencesEntry(key: PreferencesKeys.globalNotifications) as? GlobalNotificationSettings) ?? GlobalNotificationSettings.defaultSettings
+            let globalSettings: GlobalNotificationSettings = (transaction.getPreferencesEntry(key: PreferencesKeys.globalNotifications) as? GlobalNotificationSettings) ?? (self.context.account.isSupportAccount ? GlobalNotificationSettings.defaultSupportSettings : GlobalNotificationSettings.defaultSettings)
             return (peerSettings, globalSettings)
         }
         |> deliverOnMainQueue).start(next: { [weak self] peerSettings, globalSettings in
@@ -4856,6 +4878,26 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
         }
         let context = self.context
         switch subject {
+        case .supportInfo:
+            var text: String?
+            if let cachedData = data.cachedData as? CachedUserData {
+                text = cachedData.supportInfo?.message
+            }
+            // TODO
+            //text="SYED123"
+            if let text = text, !text.isEmpty {
+                let contextMenuController = ContextMenuController(actions: [ContextMenuAction(content: .text(title: self.presentationData.strings.Conversation_ContextMenuCopy, accessibilityLabel: self.presentationData.strings.Conversation_ContextMenuCopy), action: {
+                    print("SYD: info \(text)")
+                    UIPasteboard.general.string = text
+                })])
+                controller.present(contextMenuController, in: .window(.root), with: ContextMenuControllerPresentationArguments(sourceNodeAndRect: { [weak self, weak sourceNode] in
+                    if let controller = self?.controller, let sourceNode = sourceNode {
+                        return (sourceNode, sourceNode.bounds.insetBy(dx: 0.0, dy: -2.0), controller.displayNode, controller.view.bounds)
+                    } else {
+                        return nil
+                    }
+                }))
+            }
         case .bio:
             var text: String?
             if let cachedData = data.cachedData as? CachedUserData {
@@ -6289,7 +6331,7 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
                     navigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .selectionDone, isForExpandedView: true))
                 }
             }
-            self.headerNode.navigationButtonContainer.update(size: CGSize(width: layout.size.width - layout.safeInsets.left * 2.0, height: navigationBarHeight), presentationData: self.presentationData, buttons: navigationButtons, expandFraction: effectiveAreaExpansionFraction, transition: transition)
+            self.headerNode.navigationButtonContainer.update(size: CGSize(width: layout.size.width - layout.safeInsets.left * 2.0, height: navigationBarHeight), presentationData: self.presentationData, buttons: navigationButtons, expandFraction: effectiveAreaExpansionFraction, transition: transition, isSupportAccount: self.context.account.isSupportAccount)
         }
     }
     
@@ -6583,7 +6625,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen {
             
             let notificationsFromAllAccounts = self.context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings])
             |> map { sharedData -> Bool in
-                let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings] as? InAppNotificationSettings ?? InAppNotificationSettings.defaultSettings
+                let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings] as? InAppNotificationSettings ?? (context.account.isSupportAccount ? InAppNotificationSettings.defaultSupportSettings : InAppNotificationSettings.defaultSettings)
                 return settings.displayNotificationsFromAllAccounts
             }
             |> distinctUntilChanged
@@ -6677,7 +6719,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen {
             if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
                 notificationsAuthorizationStatus.set(
                     .single(.allowed)
-                    |> then(DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications)
+                    |> then(DeviceAccess.authorizationStatus(applicationInForeground: context.sharedContext.applicationBindings.applicationInForeground, subject: .notifications, isSupportAccount: context.account.isSupportAccount)
                     )
                 )
             }

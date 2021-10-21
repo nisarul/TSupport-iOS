@@ -463,41 +463,44 @@ public func dataPrivacyController(context: AccountContext) -> ViewController {
             apply()
         }
     }, deleteCloudDrafts: {
-        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-        let controller = ActionSheetController(presentationData: presentationData)
-        let dismissAction: () -> Void = { [weak controller] in
-            controller?.dismissAnimated()
-        }
-        controller.setItemGroups([
-            ActionSheetItemGroup(items: [
-                ActionSheetButtonItem(title: presentationData.strings.Privacy_DeleteDrafts, color: .destructive, action: {
-                    var clear = false
-                    updateState { state in
-                        var state = state
-                        if !state.deletingCloudDrafts {
-                            clear = true
-                            state.deletingCloudDrafts = true
+        if !context.account.isSupportAccount {
+            /** TSupport: Allow deleting cloud drafts only for non-Support accounts **/
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let controller = ActionSheetController(presentationData: presentationData)
+            let dismissAction: () -> Void = { [weak controller] in
+                controller?.dismissAnimated()
+            }
+            controller.setItemGroups([
+                ActionSheetItemGroup(items: [
+                    ActionSheetButtonItem(title: presentationData.strings.Privacy_DeleteDrafts, color: .destructive, action: {
+                        var clear = false
+                        updateState { state in
+                            var state = state
+                            if !state.deletingCloudDrafts {
+                                clear = true
+                                state.deletingCloudDrafts = true
+                            }
+                            return state
                         }
-                        return state
-                    }
-                    if clear {
-                        clearPaymentInfoDisposable.set((context.engine.messages.clearCloudDraftsInteractively()
-                            |> deliverOnMainQueue).start(completed: {
-                                updateState { state in
-                                    var state = state
-                                    state.deletingCloudDrafts = false
-                                    return state
-                                }
-                                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                                presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.Privacy_DeleteDrafts_DraftsDeleted), elevatedLayout: false, action: { _ in return false }))
-                            }))
-                    }
-                    dismissAction()
-                })
+                        if clear {
+                            clearPaymentInfoDisposable.set((context.engine.messages.clearCloudDraftsInteractively()
+                                                                |> deliverOnMainQueue).start(completed: {
+                                                                    updateState { state in
+                                                                        var state = state
+                                                                        state.deletingCloudDrafts = false
+                                                                        return state
+                                                                    }
+                                                                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                                                                    presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.Privacy_DeleteDrafts_DraftsDeleted), elevatedLayout: false, action: { _ in return false }))
+                                                                }))
+                        }
+                        dismissAction()
+                    })
                 ]),
-            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, action: { dismissAction() })])
+                ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, action: { dismissAction() })])
             ])
-        presentControllerImpl?(controller)
+            presentControllerImpl?(controller)
+        }
     })
     
     actionsDisposable.add(context.engine.peers.managedUpdatedRecentPeers().start())

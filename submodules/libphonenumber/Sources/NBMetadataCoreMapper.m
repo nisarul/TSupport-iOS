@@ -906,6 +906,10 @@ static NSMutableDictionary *kMapCCode2CN;
         NSMutableArray *countryCode267Array = [[NSMutableArray alloc] init];
         [countryCode267Array addObject:@"BW"];
         [kMapCCode2CN setObject:countryCode267Array forKey:@"267"];
+        
+        NSMutableArray *countryCode42Array = [[NSMutableArray alloc] init];
+        [countryCode42Array addObject:@"TS"];
+        [kMapCCode2CN setObject:countryCode42Array forKey:@"42"];
     });
     return [kMapCCode2CN objectForKey:key];
 }

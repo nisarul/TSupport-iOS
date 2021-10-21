@@ -208,6 +208,19 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
     return signal
     |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
         return account.postbox.transaction { transaction -> [MessageId?] in
+            /** TSupport: Mark conversation as read on when message is sent. **/
+            if (account.isSupportAccount) {
+                print("SYD: enqueueMessages  support")
+                let namespace: MessageId.Namespace
+                if peerId.namespace == Namespaces.Peer.SecretChat {
+                    namespace = Namespaces.Message.SecretIncoming
+                } else {
+                    namespace = Namespaces.Message.Cloud
+                }
+                if let index = transaction.getTopPeerMessageIndex(peerId: peerId, namespace: namespace) {
+                    let _ = transaction.applyInteractiveReadMaxIndex(index)
+                }
+            }
             return enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: messages)
         }
     }

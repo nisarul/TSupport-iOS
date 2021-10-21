@@ -470,6 +470,10 @@ public extension TelegramEngine {
             return _internal_fetchAndUpdateCachedPeerData(accountPeerId: self.account.peerId, peerId: peerId, network: self.account.network, postbox: self.account.postbox)
         }
 
+        public func fetchAndUpdateSupportCachedPeerData(peerId: PeerId) -> Signal<Bool, NoError> {
+            return _internal_fetchAndUpdateSupportCachedPeerData(accountPeerId: self.account.peerId, peerId: peerId, network: self.account.network, postbox: self.account.postbox)
+        }
+
         public func toggleItemPinned(location: TogglePeerChatPinnedLocation, itemId: PinnedItemId) -> Signal<TogglePeerChatPinnedResult, NoError> {
             return _internal_toggleItemPinned(postbox: self.account.postbox, location: location, itemId: itemId)
         }

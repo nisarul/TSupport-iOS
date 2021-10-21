@@ -196,7 +196,7 @@ public func legacyAttachmentMenu(context: AccountContext, peer: Peer, chatLocati
                     return
                 }
                 
-                DeviceAccess.authorizeAccess(to: .camera(.video), presentationData: updatedPresentationData.initial, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
+                DeviceAccess.authorizeAccess(to: .camera(.video), isSupportAccount: context.account.isSupportAccount, presentationData: updatedPresentationData.initial, present: context.sharedContext.presentGlobalController, openSettings: context.sharedContext.applicationBindings.openSettings, { value in
                     if value {
                         openCamera(cameraView, controller)
                     }
@@ -374,7 +374,24 @@ public func legacyAttachmentMenu(context: AccountContext, peer: Peer, chatLocati
         })!
         itemViews.append(contactItem)
     }
-    
+
+    /** TSupport: Add @tl_bot as template bot to manage templates **/
+    if context.account.isSupportAccount {
+        let botItem = TGMenuSheetButtonItemView(title: "Template", type: TGMenuSheetButtonTypeDefault, fontSize: fontSize, action: { [weak controller] in
+            controller?.dismiss(animated: true)
+            let support_bot_peerid = PeerId(852373116)
+            let _ = context.account.postbox.transaction({ transaction -> Void in
+                if let support_bot_peer = transaction.getPeer(support_bot_peerid)  {
+                    Queue.mainQueue().async {
+                        selectRecentlyUsedInlineBot(support_bot_peer)
+                    }
+                }
+                }).start()
+        })!
+        botItem.overflow = true
+        itemViews.append(botItem)
+    }
+
     carouselItemView?.underlyingViews = underlyingViews
     
     if editMediaOptions == nil {

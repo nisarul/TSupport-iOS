@@ -144,7 +144,7 @@ public class ContactsController: ViewController {
         })
         
         if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
-            self.authorizationDisposable = (combineLatest(DeviceAccess.authorizationStatus(subject: .contacts), combineLatest(context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .contacts)!), context.account.postbox.preferencesView(keys: [PreferencesKeys.contactsSettings]), context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]))
+            self.authorizationDisposable = (combineLatest(DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: context.account.isSupportAccount), combineLatest(context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .contacts)!), context.account.postbox.preferencesView(keys: [PreferencesKeys.contactsSettings]), context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]))
             |> map { noticeView, preferences, sharedData -> (Bool, ContactsSortOrder) in
                 let settings: ContactsSettings = preferences.values[PreferencesKeys.contactsSettings] as? ContactsSettings ?? ContactsSettings.defaultSettings
                 let synchronizeDeviceContacts: Bool = settings.synchronizeContacts
@@ -303,7 +303,7 @@ public class ContactsController: ViewController {
         }
         
         self.contactsNode.openPeopleNearby = { [weak self] in
-            let _ = (DeviceAccess.authorizationStatus(subject: .location(.tracking))
+            let _ = (DeviceAccess.authorizationStatus(subject: .location(.tracking), isSupportAccount: self?.context.account.isSupportAccount ?? false)
             |> take(1)
             |> deliverOnMainQueue).start(next: { [weak self] status in
                 guard let strongSelf = self else {
@@ -343,7 +343,7 @@ public class ContactsController: ViewController {
         }
         
         self.contactsNode.openInvite = { [weak self] in
-            let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
+            let _ = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: self?.context.account.isSupportAccount ?? false)
             |> take(1)
             |> deliverOnMainQueue).start(next: { value in
                 guard let strongSelf = self else {
@@ -357,7 +357,7 @@ public class ContactsController: ViewController {
                             }
                         })
                     case .notDetermined:
-                        DeviceAccess.authorizeAccess(to: .contacts)
+                        DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: strongSelf.context.account.isSupportAccount)
                         strongSelf.contactsNode.contactListNode.listNode.clearHighlightAnimated(true)
                     default:
                         let presentationData = strongSelf.presentationData
@@ -471,7 +471,7 @@ public class ContactsController: ViewController {
     }
     
     @objc func addPressed() {
-        let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
+        let _ = (DeviceAccess.authorizationStatus(subject: .contacts, isSupportAccount: self.context.account.isSupportAccount)
         |> take(1)
         |> deliverOnMainQueue).start(next: { [weak self] status in
             guard let strongSelf = self else {
@@ -496,7 +496,7 @@ public class ContactsController: ViewController {
                         }
                     }), completed: nil, cancelled: nil))
                 case .notDetermined:
-                    DeviceAccess.authorizeAccess(to: .contacts)
+                    DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: strongSelf.context.account.isSupportAccount)
                 default:
                     let presentationData = strongSelf.presentationData
                     strongSelf.present(textAlertController(context: strongSelf.context, title: presentationData.strings.AccessDenied_Title, text: presentationData.strings.Contacts_AccessDeniedError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_NotNow, action: {}), TextAlertAction(type: .genericAction, title: presentationData.strings.AccessDenied_Settings, action: {

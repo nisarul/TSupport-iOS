@@ -866,7 +866,7 @@ public final class PresentationCallImpl: PresentationCall {
     public func answer() {
         let (presentationData, present, openSettings) = self.getDeviceAccessData()
         
-        DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), presentationData: presentationData, present: { c, a in
+        DeviceAccess.authorizeAccess(to: .microphone(.voiceCall), isSupportAccount: self.context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
             present(c, a)
         }, openSettings: {
             openSettings()
@@ -876,7 +876,7 @@ public final class PresentationCallImpl: PresentationCall {
             }
             if value {
                 if strongSelf.isVideo {
-                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), presentationData: presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.videoCall), isSupportAccount: strongSelf.context.account.isSupportAccount, presentationData: presentationData, present: { c, a in
                         present(c, a)
                     }, openSettings: {
                         openSettings()

@@ -63,7 +63,7 @@ final class UnauthorizedApplicationContext {
             }
         })
         
-        DeviceAccess.authorizeAccess(to: .cellularData, presentationData: sharedContext.currentPresentationData.with { $0 }, present: { [weak self] c, a in
+        DeviceAccess.authorizeAccess(to: .cellularData, isSupportAccount: false, presentationData: sharedContext.currentPresentationData.with { $0 }, present: { [weak self] c, a in
             if let strongSelf = self {
                 (strongSelf.rootController.viewControllers.last as? ViewController)?.present(c, in: .window(.root))
             }
@@ -322,7 +322,7 @@ final class AuthorizedApplicationContext {
                     if let current = strongSelf.inAppNotificationSettings {
                         inAppNotificationSettings = current
                     } else {
-                        inAppNotificationSettings = InAppNotificationSettings.defaultSettings
+                        inAppNotificationSettings = (context.account.isSupportAccount ? InAppNotificationSettings.defaultSupportSettings : InAppNotificationSettings.defaultSettings)
                     }
                     
                     if let appLockContext = strongSelf.context.sharedContext.appLockContext as? AppLockContextImpl {
@@ -611,7 +611,7 @@ final class AuthorizedApplicationContext {
                             switch state {
                                 case .contacts:
                                     splitTest.addEvent(.ContactsRequest)
-                                    DeviceAccess.authorizeAccess(to: .contacts, presentationData: context.sharedContext.currentPresentationData.with { $0 }, { result in
+                                    DeviceAccess.authorizeAccess(to: .contacts, isSupportAccount: context.account.isSupportAccount, presentationData: context.sharedContext.currentPresentationData.with { $0 }, { result in
                                         if result {
                                             splitTest.addEvent(.ContactsAllowed)
                                         } else {
@@ -622,7 +622,7 @@ final class AuthorizedApplicationContext {
                                     })
                                 case .notifications:
                                     splitTest.addEvent(.NotificationsRequest)
-                                    DeviceAccess.authorizeAccess(to: .notifications, registerForNotifications: { result in
+                                    DeviceAccess.authorizeAccess(to: .notifications, isSupportAccount: context.account.isSupportAccount, registerForNotifications: { result in
                                         context.sharedContext.applicationBindings.registerForNotifications(result)
                                     }, { result in
                                         if result {
@@ -634,7 +634,7 @@ final class AuthorizedApplicationContext {
                                         ApplicationSpecificNotice.setPermissionWarning(accountManager: context.sharedContext.accountManager, permission: .notifications, value: 0)
                                     })
                                 case .cellularData:
-                                    DeviceAccess.authorizeAccess(to: .cellularData, presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: { [weak self] c, a in
+                                    DeviceAccess.authorizeAccess(to: .cellularData, isSupportAccount: context.account.isSupportAccount, presentationData: context.sharedContext.currentPresentationData.with { $0 }, present: { [weak self] c, a in
                                         if let strongSelf = self {
                                             (strongSelf.rootController.viewControllers.last as? ViewController)?.present(c, in: .window(.root))
                                         }
@@ -645,7 +645,7 @@ final class AuthorizedApplicationContext {
                                         ApplicationSpecificNotice.setPermissionWarning(accountManager: context.sharedContext.accountManager, permission: .cellularData, value: 0)
                                     })
                                 case .siri:
-                                    DeviceAccess.authorizeAccess(to: .siri, requestSiriAuthorization: { completion in
+                                    DeviceAccess.authorizeAccess(to: .siri, isSupportAccount: context.account.isSupportAccount, requestSiriAuthorization: { completion in
                                         return context.sharedContext.applicationBindings.requestSiriAuthorization(completion)
                                     }, { result in
                                         permissionsPosition.set(position + 1)

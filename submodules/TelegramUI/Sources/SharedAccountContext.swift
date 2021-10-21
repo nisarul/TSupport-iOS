@@ -37,6 +37,7 @@ private final class AccountUserInterfaceInUseContext {
 private struct AccountAttributes: Equatable {
     let sortIndex: Int32
     let isTestingEnvironment: Bool
+    let isSupportAccount: Bool
     let backupData: AccountBackupData?
 }
 
@@ -339,7 +340,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         let differenceDisposable = MetaDisposable()
         let _ = (accountManager.accountRecords()
-        |> map { view -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool)?) in
+        |> map { view -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool, Bool)?) in
             print("SharedAccountContextImpl: records appeared in \(CFAbsoluteTimeGetCurrent() - startTime)")
             
             var result: [AccountRecordId: AccountAttributes] = [:]
@@ -361,6 +362,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         return false
                     }
                 })
+                let isSupportAccount = record.attributes.contains(where: { attribute in
+                    if case let .environment(environment) = attribute, case true = environment.isSupportAccount {
+                        return true
+                    } else {
+                        return false
+                    }
+                })
                 var backupData: AccountBackupData?
                 var sortIndex: Int32 = 0
                 for attribute in record.attributes {
@@ -370,9 +378,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         backupData = backupDataValue.data
                     }
                 }
-                result[record.id] = AccountAttributes(sortIndex: sortIndex, isTestingEnvironment: isTestingEnvironment, backupData: backupData)
+                result[record.id] = AccountAttributes(sortIndex: sortIndex, isTestingEnvironment: isTestingEnvironment, isSupportAccount: isSupportAccount, backupData: backupData)
             }
-            let authRecord: (AccountRecordId, Bool)? = view.currentAuthAccount.flatMap({ authAccount in
+            let authRecord: (AccountRecordId, Bool, Bool)? = view.currentAuthAccount.flatMap({ authAccount in
                 let isTestingEnvironment = authAccount.attributes.contains(where: { attribute in
                     if case let .environment(environment) = attribute, case .test = environment.environment {
                         return true
@@ -380,7 +388,14 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         return false
                     }
                 })
-                return (authAccount.id, isTestingEnvironment)
+                let isSupportAccount = authAccount.attributes.contains(where: { attribute in
+                    if case let .environment(environment) = attribute, case true = environment.isSupportAccount {
+                        return true
+                    } else {
+                        return false
+                    }
+                })
+                return (authAccount.id, isTestingEnvironment, isSupportAccount)
             })
             return (view.currentRecord?.id, result, authRecord)
         }
@@ -404,7 +419,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             var addedAuthSignal: Signal<UnauthorizedAccount?, NoError> = .single(nil)
             for (id, attributes) in records {
                 if self.activeAccountsValue?.accounts.firstIndex(where: { $0.0 == id}) == nil {
-                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: telegramAccountAuxiliaryMethods)
+                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, isSupportAccount: attributes.isSupportAccount, backupData: attributes.backupData, auxiliaryMethods: telegramAccountAuxiliaryMethods)
                     |> mapToSignal { result -> Signal<AddedAccountResult, NoError> in
                         switch result {
                             case let .authorized(account):
@@ -426,7 +441,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             }
             if let authRecord = authRecord, authRecord.0 != self.activeAccountsValue?.currentAuth?.id {
-                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: telegramAccountAuxiliaryMethods)
+                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, isSupportAccount: authRecord.2, backupData: nil, auxiliaryMethods: telegramAccountAuxiliaryMethods)
                 |> mapToSignal { result -> Signal<UnauthorizedAccount?, NoError> in
                     switch result {
                         case let .unauthorized(account):
@@ -930,7 +945,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     public func beginNewAuth(testingEnvironment: Bool) {
         let _ = self.accountManager.transaction({ transaction -> Void in
-            let _ = transaction.createAuth([.environment(AccountEnvironmentAttribute(environment: testingEnvironment ? .test : .production))])
+            let _ = transaction.createAuth([.environment(AccountEnvironmentAttribute(environment: testingEnvironment ? .test : .production, isSupportAccount: false))])
         }).start()
     }
     
@@ -1298,7 +1313,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }, commitEmojiInteraction: { _, _, _, _ in
         }, requestMessageUpdate: { _ in
         }, cancelInteractiveKeyboardGestures: {
-        }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
+        }, automaticMediaDownloadSettings: (context.account.isSupportAccount ? MediaAutoDownloadSettings.defaultSupportSettings : MediaAutoDownloadSettings.defaultSettings),
            pollActionState: ChatInterfacePollActionState(), stickerSettings: ChatInterfaceStickerSettings(loopAnimatedStickers: false), presentationContext: ChatPresentationContext(backgroundNode: backgroundNode as? WallpaperBackgroundNode))
         
         let content: ChatMessageItemContent

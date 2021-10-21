@@ -9,6 +9,10 @@ public struct MessageNotificationSettings: PostboxCoding, Equatable {
         return MessageNotificationSettings(enabled: true, displayPreviews: true, sound: .bundledModern(id: 0))
     }
     
+    public static var defaultSupportSettings: MessageNotificationSettings {
+        return MessageNotificationSettings(enabled: false, displayPreviews: false, sound: .none)
+    }
+    
     public init(enabled: Bool, displayPreviews: Bool, sound: PeerMessageSound) {
         self.enabled = enabled
         self.displayPreviews = displayPreviews
@@ -36,6 +40,10 @@ public struct GlobalNotificationSettingsSet: PostboxCoding, Equatable {
     
     public static var defaultSettings: GlobalNotificationSettingsSet {
         return GlobalNotificationSettingsSet(privateChats: MessageNotificationSettings.defaultSettings, groupChats: .defaultSettings, channels: .defaultSettings, contactsJoined: true)
+    }
+
+    public static var defaultSupportSettings: GlobalNotificationSettingsSet {
+        return GlobalNotificationSettingsSet(privateChats: MessageNotificationSettings.defaultSupportSettings, groupChats: .defaultSupportSettings, channels: .defaultSupportSettings, contactsJoined: false)
     }
     
     public init(privateChats: MessageNotificationSettings, groupChats: MessageNotificationSettings, channels: MessageNotificationSettings, contactsJoined: Bool) {
@@ -65,6 +73,8 @@ public struct GlobalNotificationSettings: PreferencesEntry, Equatable, PostboxGl
     public var remote: GlobalNotificationSettingsSet
     
     public static var defaultSettings: GlobalNotificationSettings = GlobalNotificationSettings(toBeSynchronized: nil, remote: GlobalNotificationSettingsSet.defaultSettings)
+    
+    public static var defaultSupportSettings: GlobalNotificationSettings = GlobalNotificationSettings(toBeSynchronized: nil, remote: GlobalNotificationSettingsSet.defaultSupportSettings)
     
     public var effective: GlobalNotificationSettingsSet {
         if let toBeSynchronized = self.toBeSynchronized {

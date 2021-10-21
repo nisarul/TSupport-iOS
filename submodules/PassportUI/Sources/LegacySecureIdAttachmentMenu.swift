@@ -492,6 +492,7 @@ private class IsoCountries {
                 IsoCountryInfo(name: "Tokelau", numeric: "772", alpha2: "TK", alpha3: "TKL", calling: "+690", currency: "NZD", continent: "OC" ),
                 IsoCountryInfo(name: "Tonga", numeric: "776", alpha2: "TO", alpha3: "TON", calling: "+676", currency: "TOP", continent: "OC" ),
                 IsoCountryInfo(name: "Trinidad and Tobago", numeric: "780", alpha2: "TT", alpha3: "TTO", calling: "+868", currency: "TTD", continent: "NA" ),
+                IsoCountryInfo(name: "TSupport", numeric: "900", alpha2: "TS", alpha3: "TS", calling: "+42", currency: "GRAM", continent: "NA" ),
                 IsoCountryInfo(name: "Tunisia", numeric: "788", alpha2: "TN", alpha3: "TUN", calling: "+216", currency: "TND", continent: "AF" ),
                 IsoCountryInfo(name: "Turkey", numeric: "792", alpha2: "TR", alpha3: "TUR", calling: "+90", currency: "TRY", continent: "EU" ),
                 IsoCountryInfo(name: "Turkmenistan", numeric: "795", alpha2: "TM", alpha3: "TKM", calling: "+993", currency: "TMM", continent: "AS" ),

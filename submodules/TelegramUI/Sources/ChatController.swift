@@ -6245,7 +6245,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 })
             }
-            DeviceAccess.authorizeAccess(to: .microphone(isVideo ? .video : .audio), presentationData: strongSelf.presentationData, present: { c, a in
+            DeviceAccess.authorizeAccess(to: .microphone(isVideo ? .video : .audio), isSupportAccount: self?.context.account.isSupportAccount ?? false, presentationData: strongSelf.presentationData, present: { c, a in
                 self?.present(c, in: .window(.root), with: a)
             }, openSettings: {
                 self?.context.sharedContext.applicationBindings.openSettings()
@@ -6254,7 +6254,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     return
                 }
                 if isVideo {
-                    DeviceAccess.authorizeAccess(to: .camera(.video), presentationData: strongSelf.presentationData, present: { c, a in
+                    DeviceAccess.authorizeAccess(to: .camera(.video), isSupportAccount: strongSelf.context.account.isSupportAccount, presentationData: strongSelf.presentationData, present: { c, a in
                         self?.present(c, in: .window(.root), with: a)
                     }, openSettings: {
                         self?.context.sharedContext.applicationBindings.openSettings()
@@ -10633,29 +10633,43 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         let peerId = self.chatLocation.peerId
 
         let replyMessageId = self.presentationInterfaceState.interfaceState.replyMessageId
-
-        if self.context.engine.messages.enqueueOutgoingMessageWithChatContextResult(to: peerId, results: results, result: result, replyToMessageId: replyMessageId, hideVia: hideVia, silentPosting: silentPosting) {
-            self.chatDisplayNode.setupSendActionOnViewUpdate({ [weak self] in
-                if let strongSelf = self {
-                    strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: true, { state in
-                        var state = state
-                        state = state.updatedInterfaceState { interfaceState in
-                            var interfaceState = interfaceState
-                            interfaceState = interfaceState.withUpdatedReplyMessageId(nil)
-                            interfaceState = interfaceState.withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: "")))
-                            interfaceState = interfaceState.withUpdatedComposeDisableUrlPreview(nil)
-                            return interfaceState
-                        }
-                        state = state.updatedInputMode { current in
-                            if case let .media(mode, maybeExpanded, focused) = current, maybeExpanded != nil  {
-                                return .media(mode: mode, expanded: nil, focused: focused)
+        
+        if results.botId == PeerId(724424159) || results.botId == PeerId(852373116) {
+            var botText = String("")
+            switch result.message {
+                case let .text(text, _, _, _):
+                    botText = text
+                default:
+                    break
+            }
+            self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                let newInputState = ChatTextInputState(inputText: NSAttributedString(string: botText))
+                return (newInputState, inputMode)
+            }
+        } else {
+            if self.context.engine.messages.enqueueOutgoingMessageWithChatContextResult(to: peerId, results: results, result: result, replyToMessageId: replyMessageId, hideVia: hideVia, silentPosting: silentPosting) {
+                self.chatDisplayNode.setupSendActionOnViewUpdate({ [weak self] in
+                    if let strongSelf = self {
+                        strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: true, { state in
+                            var state = state
+                            state = state.updatedInterfaceState { interfaceState in
+                                var interfaceState = interfaceState
+                                interfaceState = interfaceState.withUpdatedReplyMessageId(nil)
+                                interfaceState = interfaceState.withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: "")))
+                                interfaceState = interfaceState.withUpdatedComposeDisableUrlPreview(nil)
+                                return interfaceState
                             }
-                            return current
-                        }
-                        return state
-                    })
-                }
-            }, nil)
+                            state = state.updatedInputMode { current in
+                                if case let .media(mode, maybeExpanded, focused) = current, maybeExpanded != nil  {
+                                    return .media(mode: mode, expanded: nil, focused: focused)
+                                }
+                                return current
+                            }
+                            return state
+                        })
+                    }
+                }, nil)
+            }
         }
     }
     

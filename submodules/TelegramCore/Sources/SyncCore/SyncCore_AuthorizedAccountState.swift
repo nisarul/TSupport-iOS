@@ -44,6 +44,7 @@ public class AuthorizedAccountState: AccountState {
     public let isTestingEnvironment: Bool
     public let masterDatacenterId: Int32
     public let peerId: PeerId
+    public let isSupportAccount: Bool
     
     public let state: State?
     
@@ -51,6 +52,7 @@ public class AuthorizedAccountState: AccountState {
         self.isTestingEnvironment = decoder.decodeInt32ForKey("isTestingEnvironment", orElse: 0) != 0
         self.masterDatacenterId = decoder.decodeInt32ForKey("masterDatacenterId", orElse: 0)
         self.peerId = PeerId(decoder.decodeInt64ForKey("peerId", orElse: 0))
+        self.isSupportAccount = decoder.decodeBoolForKey("isSupportAccount", orElse: false)
         self.state = decoder.decodeObjectForKey("state", decoder: { return State(decoder: $0) }) as? State
     }
     
@@ -58,26 +60,29 @@ public class AuthorizedAccountState: AccountState {
         encoder.encodeInt32(self.isTestingEnvironment ? 1 : 0, forKey: "isTestingEnvironment")
         encoder.encodeInt32(self.masterDatacenterId, forKey: "masterDatacenterId")
         encoder.encodeInt64(self.peerId.toInt64(), forKey: "peerId")
+        encoder.encodeBool(self.isSupportAccount, forKey: "isSupportAccount")
         if let state = self.state {
             encoder.encodeObject(state, forKey: "state")
         }
     }
     
-    public init(isTestingEnvironment: Bool, masterDatacenterId: Int32, peerId: PeerId, state: State?) {
+    public init(isTestingEnvironment: Bool, masterDatacenterId: Int32, peerId: PeerId, isSupportAccount: Bool, state: State?) {
         self.isTestingEnvironment = isTestingEnvironment
         self.masterDatacenterId = masterDatacenterId
         self.peerId = peerId
         self.state = state
+        self.isSupportAccount = isSupportAccount
     }
     
     public func changedState(_ state: State) -> AuthorizedAccountState {
-        return AuthorizedAccountState(isTestingEnvironment: self.isTestingEnvironment, masterDatacenterId: self.masterDatacenterId, peerId: self.peerId, state: state)
+        return AuthorizedAccountState(isTestingEnvironment: self.isTestingEnvironment, masterDatacenterId: self.masterDatacenterId, peerId: self.peerId, isSupportAccount: self.isSupportAccount, state: state)
     }
     
     public func equalsTo(_ other: AccountState) -> Bool {
         if let other = other as? AuthorizedAccountState {
             return self.isTestingEnvironment == other.isTestingEnvironment && self.masterDatacenterId == other.masterDatacenterId &&
                 self.peerId == other.peerId &&
+                self.isSupportAccount == other.isSupportAccount &&
                 self.state == other.state
         } else {
             return false

@@ -416,7 +416,17 @@ final class ChatTitleView: UIView, NavigationBarTitleView {
                                             userPresence = TelegramUserPresence(status: .none, lastActivity: 0)
                                         }
                                         let (string, activity) = stringAndActivityForUserPresence(strings: self.strings, dateTimeFormat: self.dateTimeFormat, presence: userPresence, relativeTo: Int32(timestamp))
-                                        let attributedString = NSAttributedString(string: string, font: subtitleFont, textColor: activity ? titleTheme.rootController.navigationBar.accentTextColor : titleTheme.rootController.navigationBar.secondaryTextColor)
+                                        
+                                        var warningString = ""
+                                        if account.isSupportAccount {
+                                            if let cachedUserData = peerView.cachedData as? CachedUserData {
+                                                if !(cachedUserData.supportInfo?.message.isEmpty ?? true)  {
+                                                    warningString = "⚠️ Check Info - "
+                                                }
+                                            }
+                                        }
+                                        
+                                        let attributedString = NSAttributedString(string: warningString+string, font: subtitleFont, textColor: activity ? titleTheme.rootController.navigationBar.accentTextColor : titleTheme.rootController.navigationBar.secondaryTextColor)
                                         state = .info(attributedString, activity ? .online : .lastSeenTime)
                                     } else {
                                         let string = NSAttributedString(string: "", font: subtitleFont, textColor: titleTheme.rootController.navigationBar.secondaryTextColor)
