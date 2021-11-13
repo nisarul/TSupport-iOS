@@ -3,7 +3,6 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import SwiftSignalKit
-import Postbox
 import TelegramPresentationData
 import TelegramStringFormatting
 import SearchBarNode
@@ -147,7 +146,6 @@ private final class AuthorizationSequenceCountrySelectionNavigationContentNode: 
         self.addSubnode(self.searchBar)
         
         self.searchBar.cancel = { [weak self] in
-            //self?.searchBar.deactivate(clear: false)
             self?.cancel()
         }
         
