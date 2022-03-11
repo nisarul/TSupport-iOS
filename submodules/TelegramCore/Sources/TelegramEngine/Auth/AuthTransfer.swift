@@ -92,7 +92,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
                     switch result {
                     case let .loginTokenSuccess(authorization):
                         switch authorization {
-                        case let .authorization(_, _, user):
+                        case let .authorization(_, _, _, user):
                             return updatedAccount.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
                                 let user = TelegramUser(user: user)
                                 let isSupportAccount = user.phone!.hasPrefix("+424") ? true : false
@@ -118,7 +118,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
             }
         case let .loginTokenSuccess(authorization):
             switch authorization {
-            case let .authorization(_, _, user):
+            case let .authorization(_, _, _, user):
                 return account.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
                     let user = TelegramUser(user: user)
                     let isSupportAccount = user.phone!.hasPrefix("+424") ? true : false

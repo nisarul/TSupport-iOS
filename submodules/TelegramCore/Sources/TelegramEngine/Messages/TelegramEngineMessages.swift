@@ -92,8 +92,8 @@ public extension TelegramEngine {
             |> ignoreValues
         }
 
-        public func forwardGameWithScore(messageId: MessageId, to peerId: PeerId) -> Signal<Void, NoError> {
-            return _internal_forwardGameWithScore(account: self.account, messageId: messageId, to: peerId)
+        public func forwardGameWithScore(messageId: MessageId, to peerId: PeerId, as senderPeerId: PeerId?) -> Signal<Void, NoError> {
+            return _internal_forwardGameWithScore(account: self.account, messageId: messageId, to: peerId, as: senderPeerId)
         }
 
         public func requestUpdatePinnedMessage(peerId: PeerId, update: PinnedMessageUpdate) -> Signal<Void, UpdatePinnedMessageError> {
@@ -131,6 +131,10 @@ public extension TelegramEngine {
         public func installInteractiveReadMessagesAction(peerId: PeerId) -> Disposable {
             return _internal_installInteractiveReadMessagesAction(postbox: self.account.postbox, stateManager: self.account.stateManager, peerId: peerId)
         }
+        
+        public func installInteractiveReadReactionsAction(peerId: PeerId, getVisibleRange: @escaping () -> VisibleMessageRange?, didReadReactionsInMessages: @escaping ([MessageId: [ReactionsMessageAttribute.RecentPeer]]) -> Void) -> Disposable {
+            return _internal_installInteractiveReadReactionsAction(postbox: self.account.postbox, stateManager: self.account.stateManager, peerId: peerId, getVisibleRange: getVisibleRange, didReadReactionsInMessages: didReadReactionsInMessages)
+        }
 
         public func requestMessageSelectPollOption(messageId: MessageId, opaqueIdentifiers: [Data]) -> Signal<TelegramMediaPoll?, RequestMessageSelectPollOptionError> {
             return _internal_requestMessageSelectPollOption(account: self.account, messageId: messageId, opaqueIdentifiers: opaqueIdentifiers)
@@ -146,6 +150,10 @@ public extension TelegramEngine {
 
         public func earliestUnseenPersonalMentionMessage(peerId: PeerId) -> Signal<EarliestUnseenPersonalMentionMessageResult, NoError> {
             return _internal_earliestUnseenPersonalMentionMessage(account: self.account, peerId: peerId)
+        }
+        
+        public func earliestUnseenPersonalReactionMessage(peerId: PeerId) -> Signal<EarliestUnseenPersonalMentionMessageResult, NoError> {
+            return _internal_earliestUnseenPersonalReactionMessage(account: self.account, peerId: peerId)
         }
 
         public func exportMessageLink(peerId: PeerId, messageId: MessageId, isThread: Bool = false) -> Signal<String?, NoError> {
@@ -251,6 +259,10 @@ public extension TelegramEngine {
             return SparseMessageCalendar(account: self.account, peerId: peerId, messageTag: tag)
         }
 
+        public func sparseMessageScrollingContext(peerId: EnginePeer.Id) -> SparseMessageScrollingContext {
+            return SparseMessageScrollingContext(account: self.account, peerId: peerId)
+        }
+
         public func refreshMessageTagStats(peerId: EnginePeer.Id, tags: [EngineMessage.Tags]) -> Signal<Never, NoError> {
             let account = self.account
             return self.account.postbox.transaction { transaction -> Api.InputPeer? in
@@ -296,6 +308,14 @@ public extension TelegramEngine {
                     |> ignoreValues
                 }
             }
+        }
+        
+        public func messageReactionList(message: EngineMessage, reaction: String?) -> EngineMessageReactionListContext {
+            return EngineMessageReactionListContext(account: self.account, message: message, reaction: reaction)
+        }
+        
+        public func translate(text: String, fromLang: String?, toLang: String) -> Signal<String?, NoError> {
+            return _internal_translate(network: self.account.network, text: text, fromLang: fromLang, toLang: toLang)
         }
     }
 }

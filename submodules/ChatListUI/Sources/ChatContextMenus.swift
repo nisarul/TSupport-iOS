@@ -250,10 +250,10 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
                                 updatedItems.append(.action(ContextMenuActionItem(text: strings.ChatList_Context_Back, icon: { theme in
                                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Back"), color: theme.contextMenu.primaryColor)
                                 }, action: { c, _ in
-                                    c.setItems(chatContextMenuItems(context: context, peerId: peerId, promoInfo: promoInfo, source: source, chatListController: chatListController, joined: joined) |> map { ContextController.Items(items: $0) }, minHeight: nil)
+                                    c.setItems(chatContextMenuItems(context: context, peerId: peerId, promoInfo: promoInfo, source: source, chatListController: chatListController, joined: joined) |> map { ContextController.Items(content: .list($0)) }, minHeight: nil)
                                 })))
 
-                                c.setItems(.single(ContextController.Items(items: updatedItems)), minHeight: nil)
+                                c.setItems(.single(ContextController.Items(content: .list(updatedItems))), minHeight: nil)
                             })))
                         }
                     }
@@ -328,8 +328,14 @@ func chatContextMenuItems(context: AccountContext, peerId: PeerId, promoInfo: Ch
                     }
                 } else {
                     if case .search = source {
-                        if let _ = peer as? TelegramChannel {
-                            items.append(.action(ContextMenuActionItem(text: strings.ChatList_Context_JoinChannel, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Add"), color: theme.contextMenu.primaryColor) }, action: { _, f in
+                        if let peer = peer as? TelegramChannel {
+                            let text: String
+                            if case .broadcast = peer.info {
+                                text = strings.ChatList_Context_JoinChannel
+                            } else {
+                                text = strings.ChatList_Context_JoinChat
+                            }
+                            items.append(.action(ContextMenuActionItem(text: text, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Add"), color: theme.contextMenu.primaryColor) }, action: { _, f in
                                 var createSignal = context.peerChannelMemberCategoriesContextsManager.join(engine: context.engine, peerId: peerId, hash: nil)
                                 var cancelImpl: (() -> Void)?
                                 let progressSignal = Signal<Never, NoError> { subscriber in

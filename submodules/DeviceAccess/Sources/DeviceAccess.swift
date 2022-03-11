@@ -17,6 +17,7 @@ import AccountContext
 public enum DeviceAccessCameraSubject {
     case video
     case videoCall
+    case qrCode
 }
 
 
@@ -30,6 +31,7 @@ public enum DeviceAccessMediaLibrarySubject {
     case send
     case save
     case wallpaper
+    case qrCode
 }
 
 public enum DeviceAccessLocationSubject {
@@ -290,6 +292,8 @@ public final class DeviceAccess {
                                                 text = presentationData.strings.AccessDenied_Camera
                                             case .videoCall:
                                                 text = presentationData.strings.AccessDenied_VideoCallCamera
+                                            case .qrCode:
+                                                text = presentationData.strings.AccessDenied_QrCamera
                                         }
                                         present(standardTextAlertController(theme: AlertControllerTheme(presentationData: presentationData), title: presentationData.strings.AccessDenied_Title, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_NotNow, action: {}), TextAlertAction(type: .genericAction, title: presentationData.strings.AccessDenied_Settings, action: {
                                             openSettings()
@@ -310,6 +314,8 @@ public final class DeviceAccess {
                                     text = presentationData.strings.AccessDenied_Camera
                                 case .videoCall:
                                     text = presentationData.strings.AccessDenied_VideoCallCamera
+                                case .qrCode:
+                                    text = presentationData.strings.AccessDenied_QrCamera
                             }
                         }
                         completion(false)
@@ -366,6 +372,8 @@ public final class DeviceAccess {
                                         text = presentationData.strings.AccessDenied_SaveMedia
                                     case .wallpaper:
                                         text = presentationData.strings.AccessDenied_Wallpapers
+                                    case .qrCode:
+                                        text = presentationData.strings.AccessDenied_QrCode
                                 }
                                 present(standardTextAlertController(theme: AlertControllerTheme(presentationData: presentationData), title: presentationData.strings.AccessDenied_Title, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_NotNow, action: {}), TextAlertAction(type: .genericAction, title: presentationData.strings.AccessDenied_Settings, action: {
                                     openSettings()

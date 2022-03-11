@@ -13,6 +13,7 @@ import GridMessageSelectionNode
 import UniversalMediaPlayer
 import ListMessageItem
 import ChatMessageInteractiveMediaBadge
+import SoftwareVideo
 
 private final class FrameSequenceThumbnailNode: ASDisplayNode {
     private let context: AccountContext
@@ -875,8 +876,11 @@ final class PeerInfoGifPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScrollViewDe
         animationTimer.start()
 
         self.statusPromise.set(context.account.postbox.combinedView(keys: [PostboxViewKey.historyTagSummaryView(tag: tagMaskForType(self.contentType), peerId: peerId, namespace: Namespaces.Message.Cloud)])
-        |> map { views -> PeerInfoStatusData? in
-            let count: Int32 = (views.views[PostboxViewKey.historyTagSummaryView(tag: tagMaskForType(self.contentType), peerId: peerId, namespace: Namespaces.Message.Cloud)] as? MessageHistoryTagSummaryView)?.count ?? 0
+        |> map { [weak self] views -> PeerInfoStatusData? in
+            guard let strongSelf = self else {
+                return nil
+            }
+            let count: Int32 = (views.views[PostboxViewKey.historyTagSummaryView(tag: tagMaskForType(strongSelf.contentType), peerId: peerId, namespace: Namespaces.Message.Cloud)] as? MessageHistoryTagSummaryView)?.count ?? 0
             if count == 0 {
                 return nil
             }

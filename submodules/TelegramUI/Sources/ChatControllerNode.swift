@@ -16,6 +16,7 @@ import FastBlur
 import ConfettiEffect
 import WallpaperBackgroundNode
 import GridMessageSelectionNode
+import SparseItemGrid
 
 final class VideoNavigationControllerDropContentItem: NavigationControllerDropContentItem {
     let itemNode: OverlayMediaItemNode
@@ -81,6 +82,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
     
     let backgroundNode: WallpaperBackgroundNode
     let historyNode: ChatHistoryListNode
+    //let historyScrollingArea: SparseDiscreteScrollingArea
     var blurredHistoryNode: ASImageNode?
     let historyNodeContainer: ASDisplayNode
     let loadingNode: ChatLoadingNode
@@ -275,13 +277,24 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
                         if attribute is ViewCountMessageAttribute{
                             return false
                         }
+                        if attribute is ForwardCountMessageAttribute {
+                            return false
+                        }
+                        if attribute is ReactionsMessageAttribute {
+                            return false
+                        }
                         return true
                     })
+                    
+                    var hideNames = options.hideNames
+                    if message.id.peerId == accountPeer.id && message.forwardInfo == nil {
+                        hideNames = true
+                    }
                     
                     var messageText = message.text
                     var messageMedia = message.media
                     var hasDice = false
-                    if options.hideNames {
+                    if hideNames {
                         for media in message.media {
                             if options.hideCaptions {
                                 if media is TelegramMediaImage || media is TelegramMediaFile {
@@ -300,11 +313,14 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
                         }
                     }
                     
-                    var forwardInfo = message.forwardInfo
-                    if forwardInfo == nil {
+                    var forwardInfo: MessageForwardInfo?
+                    if let existingForwardInfo = message.forwardInfo {
+                        forwardInfo = MessageForwardInfo(author: existingForwardInfo.author, source: existingForwardInfo.source, sourceMessageId: nil, date: 0, authorSignature: nil, psaType: nil, flags: [])
+                    }
+                    else {
                         forwardInfo = MessageForwardInfo(author: message.author, source: nil, sourceMessageId: nil, date: 0, authorSignature: nil, psaType: nil, flags: [])
                     }
-                    if options.hideNames && !hasDice {
+                    if hideNames && !hasDice {
                         forwardInfo = nil
                     }
                     
@@ -323,8 +339,13 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
             return getMessageTransitionNode?()
         })
         self.historyNode.rotated = true
+
+        //self.historyScrollingArea = SparseDiscreteScrollingArea()
+        //self.historyNode.historyScrollingArea = self.historyScrollingArea
+
         self.historyNodeContainer = ASDisplayNode()
         self.historyNodeContainer.addSubnode(self.historyNode)
+        //self.historyNodeContainer.addSubnode(self.historyScrollingArea)
 
         var getContentAreaInScreenSpaceImpl: (() -> CGRect)?
         var onTransitionEventImpl: ((ContainedViewLayoutTransition) -> Void)?
@@ -462,10 +483,10 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
             self.historyNode.verticalScrollIndicatorColor = UIColor(white: 0.5, alpha: 0.8)
         }
         self.historyNode.enableExtractedBackgrounds = true
+        //self.historyNode.verticalScrollIndicatorColor = .clear
     
         self.addSubnode(self.backgroundNode)
         self.addSubnode(self.historyNodeContainer)
-        self.addSubnode(self.navigateButtons)
 
         self.addSubnode(self.inputPanelBackgroundNode)
         self.addSubnode(self.inputPanelBackgroundSeparatorNode)
@@ -477,6 +498,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
         }
 
         self.addSubnode(self.messageTransitionNode)
+        self.addSubnode(self.navigateButtons)
         self.addSubnode(self.presentationContextMarker)
 
         self.navigationBar?.additionalContentNode.addSubnode(self.titleAccessoryPanelContainer)
@@ -1041,6 +1063,8 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
         if let blurredHistoryNode = self.blurredHistoryNode {
             transition.updateFrame(node: blurredHistoryNode, frame: contentBounds)
         }
+
+        //transition.updateFrame(node: self.historyScrollingArea, frame: contentBounds)
         
         transition.updateFrame(node: self.loadingNode, frame: contentBounds)
         
@@ -2444,7 +2468,7 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
                             messages.append(.forward(source: id, grouping: .auto, attributes: attributes, correlationId: nil))
                         }
                     }
-
+                    
                     var usedCorrelationId: Int64?
 
                     if !messages.isEmpty, case .message = messages[messages.count - 1] {

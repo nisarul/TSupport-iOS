@@ -1,5 +1,6 @@
 import Foundation
 import SwiftSignalKit
+import ManagedFile
 
 private final class ResourceStatusContext {
     var status: MediaResourceStatus?
@@ -213,7 +214,7 @@ public final class MediaBox {
         return ResourceStorePaths(partial: "\(fileNameForId(id))_partial", complete: "\(fileNameForId(id))")
     }
     
-    private func cachedRepresentationPathsForId(_ id: MediaResourceId, representationId: String, keepDuration: CachedMediaRepresentationKeepDuration) -> ResourceStorePaths {
+    private func cachedRepresentationPathsForId(_ id: String, representationId: String, keepDuration: CachedMediaRepresentationKeepDuration) -> ResourceStorePaths {
         let cacheString: String
         switch keepDuration {
             case .general:
@@ -784,15 +785,31 @@ public final class MediaBox {
     
     public func storeCachedResourceRepresentation(_ resource: MediaResource, representation: CachedMediaResourceRepresentation, data: Data) {
         self.dataQueue.async {
-            let path = self.cachedRepresentationPathsForId(resource.id, representationId: representation.uniqueId, keepDuration: representation.keepDuration).complete
+            let path = self.cachedRepresentationPathsForId(resource.id.stringRepresentation, representationId: representation.uniqueId, keepDuration: representation.keepDuration).complete
             let _ = try? data.write(to: URL(fileURLWithPath: path))
         }
     }
 
     public func storeCachedResourceRepresentation(_ resource: MediaResource, representationId: String, keepDuration: CachedMediaRepresentationKeepDuration, data: Data, completion: @escaping (String) -> Void = { _ in }) {
         self.dataQueue.async {
-            let path = self.cachedRepresentationPathsForId(resource.id, representationId: representationId, keepDuration: keepDuration).complete
+            let path = self.cachedRepresentationPathsForId(resource.id.stringRepresentation, representationId: representationId, keepDuration: keepDuration).complete
             let _ = try? data.write(to: URL(fileURLWithPath: path))
+            completion(path)
+        }
+    }
+    
+    public func storeCachedResourceRepresentation(_ resourceId: String, representationId: String, keepDuration: CachedMediaRepresentationKeepDuration, data: Data, completion: @escaping (String) -> Void = { _ in }) {
+        self.dataQueue.async {
+            let path = self.cachedRepresentationPathsForId(resourceId, representationId: representationId, keepDuration: keepDuration).complete
+            let _ = try? data.write(to: URL(fileURLWithPath: path))
+            completion(path)
+        }
+    }
+    
+    public func storeCachedResourceRepresentation(_ resourceId: String, representationId: String, keepDuration: CachedMediaRepresentationKeepDuration, tempFile: TempBoxFile, completion: @escaping (String) -> Void = { _ in }) {
+        self.dataQueue.async {
+            let path = self.cachedRepresentationPathsForId(resourceId, representationId: representationId, keepDuration: keepDuration).complete
+            let _ = try? FileManager.default.moveItem(atPath: tempFile.path, toPath: path)
             completion(path)
         }
     }
@@ -802,7 +819,7 @@ public final class MediaBox {
             let disposable = MetaDisposable()
             
             let begin: () -> Void = {
-                let paths = self.cachedRepresentationPathsForId(resource.id, representationId: representation.uniqueId, keepDuration: representation.keepDuration)
+                let paths = self.cachedRepresentationPathsForId(resource.id.stringRepresentation, representationId: representation.uniqueId, keepDuration: representation.keepDuration)
                 if let size = fileSize(paths.complete) {
                     self.timeBasedCleanup.touch(paths: [
                         paths.complete
@@ -971,7 +988,7 @@ public final class MediaBox {
             let begin: () -> Void = {
                 let paths: ResourceStorePaths
                 if let baseResourceId = baseResourceId {
-                    paths = self.cachedRepresentationPathsForId(MediaResourceId(baseResourceId), representationId: id, keepDuration: keepDuration)
+                    paths = self.cachedRepresentationPathsForId(MediaResourceId(baseResourceId).stringRepresentation, representationId: id, keepDuration: keepDuration)
                 } else {
                     paths = self.storePathsForId(MediaResourceId(id))
                 }
@@ -1228,7 +1245,7 @@ public final class MediaBox {
         }
     }
     
-    public func removeOtherCachedResources(paths: [String]) -> Signal<Void, NoError> {
+    public func removeOtherCachedResources(paths: [String]) -> Signal<Float, NoError> {
         return Signal { subscriber in
             self.dataQueue.async {
                 var keepPrefixes: [String] = []
@@ -1238,14 +1255,31 @@ public final class MediaBox {
                     keepPrefixes.append(resourcePaths.complete)
                 }
                 
+                var count: Int = 0
+                let totalCount = paths.count
+                if totalCount == 0 {
+                    subscriber.putNext(1.0)
+                    subscriber.putCompletion()
+                    return
+                }
+                
+                let reportProgress: (Int) -> Void = { count in
+                    Queue.mainQueue().async {
+                        subscriber.putNext(min(1.0, Float(count) / Float(totalCount)))
+                    }
+                }
+                
                 outer: for path in paths {
                     for prefix in keepPrefixes {
                         if path.starts(with: prefix) {
+                            count += 1
                             continue outer
                         }
                     }
                     
+                    count += 1
                     unlink(self.basePath + "/" + path)
+                    reportProgress(count)
                 }
                 subscriber.putCompletion()
             }
@@ -1253,27 +1287,10 @@ public final class MediaBox {
         }
     }
     
-    public func removeCachedResources(_ ids: Set<MediaResourceId>, force: Bool = false) -> Signal<Void, NoError> {
+    public func removeCachedResources(_ ids: Set<MediaResourceId>, force: Bool = false) -> Signal<Float, NoError> {
         return Signal { subscriber in
             self.dataQueue.async {
-                for id in ids {
-                    if !force {
-                        if self.fileContexts[id] != nil {
-                            continue
-                        }
-                        if self.keepResourceContexts[id] != nil {
-                            continue
-                        }
-                    }
-                    let paths = self.storePathsForId(id)
-                    unlink(paths.complete)
-                    unlink(paths.partial)
-                    unlink(paths.partial + ".meta")
-                    self.fileContexts.removeValue(forKey: id)
-                }
-                
                 let uniqueIds = Set(ids.map { $0.stringRepresentation })
-                
                 var pathsToDelete: [String] = []
                 
                 for cacheType in ["cache", "short-cache"] {
@@ -1293,8 +1310,46 @@ public final class MediaBox {
                     }
                 }
                 
+                var count: Int = 0
+                let totalCount = ids.count * 3 + pathsToDelete.count
+                if totalCount == 0 {
+                    subscriber.putNext(1.0)
+                    subscriber.putCompletion()
+                    return
+                }
+                
+                let reportProgress: (Int) -> Void = { count in
+                    Queue.mainQueue().async {
+                        subscriber.putNext(min(1.0, Float(count) / Float(totalCount)))
+                    }
+                }
+                
+                for id in ids {
+                    if !force {
+                        if self.fileContexts[id] != nil {
+                            count += 3
+                            reportProgress(count)
+                            continue
+                        }
+                        if self.keepResourceContexts[id] != nil {
+                            count += 3
+                            reportProgress(count)
+                            continue
+                        }
+                    }
+                    let paths = self.storePathsForId(id)
+                    unlink(paths.complete)
+                    unlink(paths.partial)
+                    unlink(paths.partial + ".meta")
+                    self.fileContexts.removeValue(forKey: id)
+                    count += 3
+                    reportProgress(count)
+                }
+                
                 for path in pathsToDelete {
                     unlink(path)
+                    count += 1
+                    reportProgress(count)
                 }
                 
                 subscriber.putCompletion()

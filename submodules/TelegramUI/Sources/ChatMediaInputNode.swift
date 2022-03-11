@@ -1339,7 +1339,7 @@ final class ChatMediaInputNode: ChatInputNode {
         self.panelFocusTimer?.invalidate()
     }
     
-    private func updateIsExpanded(_ isExpanded: Bool) {
+    private func updateIsFocused(_ isExpanded: Bool) {
         guard self.panelIsFocused != isExpanded else {
             return
         }
@@ -1465,7 +1465,7 @@ final class ChatMediaInputNode: ChatInputNode {
             
             let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
             
-            let contextController = ContextController(account: strongSelf.context.account, presentationData: presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: sourceNode, sourceRect: sourceRect)), items: .single(ContextController.Items(items: items)), gesture: gesture)
+            let contextController = ContextController(account: strongSelf.context.account, presentationData: presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: sourceNode, sourceRect: sourceRect)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
             strongSelf.controllerInteraction.presentGlobalOverlayController(contextController, nil)
         })
     }
@@ -2054,7 +2054,7 @@ final class ChatMediaInputNode: ChatInputNode {
             panelHeight = standardInputHeight
         }
         
-        self.updateIsExpanded(isFocused)
+        self.updateIsFocused(isFocused)
         
         if displaySearch {
             if let searchContainerNode = self.searchContainerNode {
@@ -2490,12 +2490,14 @@ final class ChatMediaInputNode: ChatInputNode {
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if self.panelIsFocused {
-            let convertedPoint = CGPoint(x: max(0.0, point.y), y: point.x)
-            if let result = self.listView.hitTest(convertedPoint, with: event) {
-                return result
-            }
-            if let result = self.gifListView.hitTest(convertedPoint, with: event) {
-                return result
+            if point.y > -41.0 && point.y < 38.0 {
+                let convertedPoint = CGPoint(x: max(0.0, point.y), y: point.x)
+                if let result = self.listView.hitTest(convertedPoint, with: event) {
+                    return result
+                }
+                if let result = self.gifListView.hitTest(convertedPoint, with: event) {
+                    return result
+                }
             }
         }
         if let searchContainerNode = self.searchContainerNode {

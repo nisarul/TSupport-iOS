@@ -152,10 +152,12 @@ private var declaredEncodables: Void = {
     declareEncodable(TelegramMediaExpiredContent.self, f: { TelegramMediaExpiredContent(decoder: $0) })
     declareEncodable(ConsumablePersonalMentionMessageAttribute.self, f: { ConsumablePersonalMentionMessageAttribute(decoder: $0) })
     declareEncodable(ConsumePersonalMessageAction.self, f: { ConsumePersonalMessageAction(decoder: $0) })
+    declareEncodable(ReadReactionAction.self, f: { ReadReactionAction(decoder: $0) })
     declareEncodable(SynchronizeGroupedPeersOperation.self, f: { SynchronizeGroupedPeersOperation(decoder: $0) })
     declareEncodable(TelegramDeviceContactImportedData.self, f: { TelegramDeviceContactImportedData(decoder: $0) })
     declareEncodable(SecureFileMediaResource.self, f: { SecureFileMediaResource(decoder: $0) })
     declareEncodable(SynchronizeMarkAllUnseenPersonalMessagesOperation.self, f: { SynchronizeMarkAllUnseenPersonalMessagesOperation(decoder: $0) })
+    declareEncodable(SynchronizeMarkAllUnseenReactionsOperation.self, f: { SynchronizeMarkAllUnseenReactionsOperation(decoder: $0) })
     declareEncodable(SynchronizeAppLogEventsOperation.self, f: { SynchronizeAppLogEventsOperation(decoder: $0) })
     declareEncodable(TelegramMediaPoll.self, f: { TelegramMediaPoll(decoder: $0) })
     declareEncodable(TelegramMediaUnsupported.self, f: { TelegramMediaUnsupported(decoder: $0) })
@@ -184,6 +186,7 @@ private var declaredEncodables: Void = {
     declareEncodable(EmojiSearchQueryMessageAttribute.self, f: { EmojiSearchQueryMessageAttribute(decoder: $0) })
     declareEncodable(WallpaperDataResource.self, f: { WallpaperDataResource(decoder: $0) })
     declareEncodable(ForwardOptionsMessageAttribute.self, f: { ForwardOptionsMessageAttribute(decoder: $0) })
+    declareEncodable(SendAsMessageAttribute.self, f: { SendAsMessageAttribute(decoder: $0) })
     
     return
 }()
@@ -439,10 +442,27 @@ private func cleanupAccount(networkArguments: NetworkInitializationArguments, ac
                 account.shouldBeServiceTaskMaster.set(.single(.always))
                 return account.network.request(Api.functions.auth.logOut())
                 |> map(Optional.init)
-                |> `catch` { _ -> Signal<Api.Bool?, NoError> in
-                    return .single(.boolFalse)
+                |> `catch` { _ -> Signal<Api.auth.LoggedOut?, NoError> in
+                    return .single(nil)
                 }
-                |> mapToSignal { _ -> Signal<Void, NoError> in
+                |> mapToSignal { result -> Signal<Void, NoError> in
+                    let _ = (accountManager.transaction { transaction -> Void in
+                        var tokens = transaction.getStoredLoginTokens()
+                        switch result {
+                        case let .loggedOut(_, futureAuthToken):
+                            if let futureAuthToken = futureAuthToken {
+                                tokens.insert(futureAuthToken.makeData(), at: 0)
+                            }
+                        default:
+                            break
+                        }
+                        
+                        if tokens.count > 20 {
+                            tokens.removeLast(tokens.count - 20)
+                        }
+                        
+                        transaction.setStoredLoginTokens(tokens)
+                    }).start()
                     account.shouldBeServiceTaskMaster.set(.single(.never))
                     return accountManager.transaction { transaction -> Void in
                         transaction.updateRecord(id, { _ in

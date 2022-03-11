@@ -301,7 +301,7 @@ public class ItemListVenueItemNode: ListViewItemNode, ItemListItemNode {
                                 strongSelf.topStripeNode.removeFromSupernode()
                             }
                             if strongSelf.bottomStripeNode.supernode == nil {
-                                strongSelf.addSubnode(strongSelf.bottomStripeNode)
+                                strongSelf.insertSubnode(strongSelf.bottomStripeNode, at: 0)
                             }
                             if strongSelf.maskNode.supernode != nil {
                                 strongSelf.maskNode.removeFromSupernode()
@@ -344,6 +344,7 @@ public class ItemListVenueItemNode: ListViewItemNode, ItemListItemNode {
                             switch neighbors.bottom {
                                 case .sameSection(false):
                                     bottomStripeInset = leftInset
+                                    strongSelf.bottomStripeNode.isHidden = false
                                 default:
                                     bottomStripeInset = 0.0
                                     hasBottomCorners = true

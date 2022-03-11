@@ -115,6 +115,8 @@ private func filterMessageAttributesForOutgoingMessage(_ attributes: [MessageAtt
                 return true
             case _ as ForwardOptionsMessageAttribute:
                 return true
+            case _ as SendAsMessageAttribute:
+                return true
             default:
                 return false
         }
@@ -133,6 +135,8 @@ private func filterMessageAttributesForForwardedMessage(_ attributes: [MessageAt
             case _ as OutgoingScheduleInfoMessageAttribute:
                 return true
             case _ as ForwardOptionsMessageAttribute:
+                return true
+            case _ as SendAsMessageAttribute:
                 return true
             default:
                 return false
@@ -293,7 +297,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
             }
         }
         switch message {
-            case let .message(_, _, _, replyToMessageId, _, _):
+            case let .message(_, attributes, _, replyToMessageId, _, _):
                 if let replyToMessageId = replyToMessageId, replyToMessageId.peerId != peerId, let replyMessage = transaction.getMessage(replyToMessageId) {
                     var canBeForwarded = true
                     if replyMessage.id.namespace != Namespaces.Message.Cloud {
@@ -306,7 +310,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         }
                     }
                     if canBeForwarded {
-                        updatedMessages.append((true, .forward(source: replyToMessageId, grouping: .none, attributes: [], correlationId: nil)))
+                        updatedMessages.append((true, .forward(source: replyToMessageId, grouping: .none, attributes: attributes, correlationId: nil)))
                     }
                 }
             case let .forward(sourceId, _, _, _):
@@ -464,20 +468,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             break
                         }
                     }
-                
-                    let authorId: PeerId?
-                    if let peer = peer as? TelegramChannel {
-                        if case .broadcast = peer.info {
-                            authorId = peer.id
-                        } else if case .group = peer.info, peer.hasPermission(.canBeAnonymous) {
-                            authorId = peer.id
-                        } else {
-                            authorId = account.peerId
-                        }
-                    }  else {
-                        authorId = account.peerId
-                    }
-                    
+                                    
                     let (tags, globalTags) = tagsForStoreMessage(incoming: false, attributes: attributes, media: mediaList, textEntities: entitiesAttribute?.entities, isPinned: false)
                     
                     var localTags: LocalMessageTags = []
@@ -489,6 +480,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                     
                     var messageNamespace = Namespaces.Message.Local
                     var effectiveTimestamp = timestamp
+                    var sendAsPeer: Peer?
                     for attribute in attributes {
                         if let attribute = attribute as? OutgoingScheduleInfoMessageAttribute {
                             if attribute.scheduleTime == scheduleWhenOnlineTimestamp, let presence = peerPresence as? TelegramUserPresence, case let .present(statusTimestamp) = presence.status, statusTimestamp >= timestamp {
@@ -496,8 +488,26 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                                 messageNamespace = Namespaces.Message.ScheduledLocal
                                 effectiveTimestamp = attribute.scheduleTime
                             }
-                            break
+                        } else if let attribute = attribute as? SendAsMessageAttribute {
+                            if let peer = transaction.getPeer(attribute.peerId) {
+                                sendAsPeer = peer
+                            }
                         }
+                    }
+                
+                    let authorId: PeerId?
+                    if let sendAsPeer = sendAsPeer {
+                        authorId = sendAsPeer.id
+                    } else if let peer = peer as? TelegramChannel {
+                        if case .broadcast = peer.info {
+                            authorId = peer.id
+                        } else if case .group = peer.info, peer.hasPermission(.canBeAnonymous) {
+                            authorId = peer.id
+                        } else {
+                            authorId = account.peerId
+                        }
+                    }  else {
+                        authorId = account.peerId
                     }
                     
                     if messageNamespace != Namespaces.Message.ScheduledLocal {
@@ -685,23 +695,11 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         } else {
                             attributes.append(contentsOf: filterMessageAttributesForOutgoingMessage(sourceMessage.attributes))
                         }
-                        
-                        let authorId: PeerId?
-                        if let peer = peer as? TelegramChannel {
-                            if case .broadcast = peer.info {
-                                authorId = peer.id
-                            } else if case .group = peer.info, peer.hasPermission(.canBeAnonymous) {
-                                authorId = peer.id
-                            } else {
-                                authorId = account.peerId
-                            }
-                        }  else {
-                            authorId = account.peerId
-                        }
-                        
+                                                
                         var messageNamespace = Namespaces.Message.Local
                         var entitiesAttribute: TextEntitiesMessageAttribute?
                         var effectiveTimestamp = timestamp
+                        var sendAsPeer: Peer?
                         var threadId: Int64?
                         for attribute in attributes {
                             if let attribute = attribute as? TextEntitiesMessageAttribute {
@@ -716,7 +714,26 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                                 if let threadMessageId = attribute.threadMessageId {
                                     threadId = makeMessageThreadId(threadMessageId)
                                 }
+                            } else if let attribute = attribute as? SendAsMessageAttribute {
+                                if let peer = transaction.getPeer(attribute.peerId) {
+                                    sendAsPeer = peer
+                                }
                             }
+                        }
+                        
+                        let authorId: PeerId?
+                        if let sendAsPeer = sendAsPeer {
+                            authorId = sendAsPeer.id
+                        } else if let peer = peer as? TelegramChannel {
+                            if case .broadcast = peer.info {
+                                authorId = peer.id
+                            } else if case .group = peer.info, peer.hasPermission(.canBeAnonymous) {
+                                authorId = peer.id
+                            } else {
+                                authorId = account.peerId
+                            }
+                        }  else {
+                            authorId = account.peerId
                         }
                         
                         if messageNamespace != Namespaces.Message.ScheduledLocal {

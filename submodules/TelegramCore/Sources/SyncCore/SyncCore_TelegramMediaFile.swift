@@ -1,4 +1,4 @@
-import Foundation
+    import Foundation
 import Postbox
 
 private let typeFileName: Int32 = 0
@@ -474,6 +474,20 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
     public var isAnimatedSticker: Bool {
         if let _ = self.fileName, self.mimeType == "application/x-tgsticker" {
             return true
+        }
+        return false
+    }
+    
+    public var isVideoSticker: Bool {
+        if self.mimeType == "video/webm" {
+            var hasSticker = false
+            for attribute in self.attributes {
+                if case .Sticker = attribute {
+                    hasSticker = true
+                    break
+                }
+            }
+            return hasSticker
         }
         return false
     }

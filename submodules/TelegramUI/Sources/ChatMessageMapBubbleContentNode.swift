@@ -183,6 +183,7 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                 }
                 var viewCount: Int?
                 var dateReplies = 0
+                let dateReactionsAndPeers = mergedMessageReactionsAndPeers(message: item.message)
                 for attribute in item.message.attributes {
                     if let attribute = attribute as? EditedMessageAttribute {
                         edited = !attribute.isHidden
@@ -236,7 +237,7 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                 }
                 
                 var statusSize = CGSize()
-                var statusApply: ((Bool) -> Void)?
+                var statusApply: ((ListViewItemUpdateAnimation) -> Void)?
                 
                 if let statusType = statusType {
                     var isReplyThread = false
@@ -244,9 +245,28 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                         isReplyThread = true
                     }
                     
-                    let (size, apply) = statusLayout(item.context, item.presentationData, edited, viewCount, dateText, statusType, CGSize(width: constrainedSize.width, height: CGFloat.greatestFiniteMagnitude), dateReplies, item.message.tags.contains(.pinned) && !item.associatedData.isInPinnedListMode && !isReplyThread, item.message.isSelfExpiring)
-                    statusSize = size
-                    statusApply = apply
+                    let statusSuggestedWidthAndContinue = statusLayout(ChatMessageDateAndStatusNode.Arguments(
+                        context: item.context,
+                        presentationData: item.presentationData,
+                        edited: edited,
+                        impressionCount: viewCount,
+                        dateText: dateText,
+                        type: statusType,
+                        layoutInput: .standalone(reactionSettings: shouldDisplayInlineDateReactions(message: item.message) ? ChatMessageDateAndStatusNode.StandaloneReactionSettings() : nil),
+                        constrainedSize: CGSize(width: constrainedSize.width, height: CGFloat.greatestFiniteMagnitude),
+                        availableReactions: item.associatedData.availableReactions,
+                        reactions: dateReactionsAndPeers.reactions,
+                        reactionPeers: dateReactionsAndPeers.peers,
+                        replyCount: dateReplies,
+                        isPinned: item.message.tags.contains(.pinned) && !item.associatedData.isInPinnedListMode && !isReplyThread,
+                        hasAutoremove: item.message.isSelfExpiring,
+                        canViewReactionList: canViewMessageReactionList(message: item.message)
+                    ))
+                    
+                    let (dateAndStatusSize, dateAndStatusApply) = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)
+                    
+                    statusSize = dateAndStatusSize
+                    statusApply = dateAndStatusApply
                 }
               
                 let contentWidth: CGFloat
@@ -290,7 +310,7 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                             strongSelf.imageNode.frame = imageFrame
                             
                             var transition: ContainedViewLayoutTransition = .immediate
-                            if case let .System(duration) = animation {
+                            if case let .System(duration, _) = animation {
                                 transition = .animated(duration: duration, curve: .spring)
                             }
                             
@@ -318,11 +338,7 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                                 if strongSelf.dateAndStatusNode.supernode == nil {
                                     strongSelf.addSubnode(strongSelf.dateAndStatusNode)
                                 }
-                                var hasAnimation = true
-                                if case .None = animation {
-                                    hasAnimation = false
-                                }
-                                statusApply(hasAnimation)
+                                statusApply(animation)
                                 strongSelf.dateAndStatusNode.frame = statusFrame.offsetBy(dx: imageFrame.minX, dy: imageFrame.minY)
                             } else if strongSelf.dateAndStatusNode.supernode != nil {
                                 strongSelf.dateAndStatusNode.removeFromSupernode()
@@ -484,5 +500,12 @@ class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                 let _ = item.controllerInteraction.openMessage(item.message, .default)
             }
         }
+    }
+    
+    override func reactionTargetView(value: String) -> UIView? {
+        if !self.dateAndStatusNode.isHidden {
+            return self.dateAndStatusNode.reactionView(value: value)
+        }
+        return nil
     }
 }

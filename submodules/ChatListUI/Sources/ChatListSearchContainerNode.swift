@@ -31,6 +31,7 @@ import UndoUI
 import TextFormat
 
 private enum ChatListTokenId: Int32 {
+    case archive
     case filter
     case peer
     case date
@@ -115,6 +116,8 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     private var selectedFilterKeyPromise = Promise<ChatListSearchFilterEntryId?>()
     private var transitionFraction: CGFloat = 0.0
     
+    private weak var copyProtectionTooltipController: TooltipController?
+    
     private var didSetReady: Bool = false
     private let _ready = Promise<Void>()
     public override func ready() -> Signal<Void, NoError> {
@@ -183,6 +186,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             let presentationData = strongSelf.presentationData
             let actionSheet = ActionSheetController(presentationData: presentationData)
             actionSheet.setItemGroups([ActionSheetItemGroup(items: [
+                ActionSheetTextItem(title: presentationData.strings.ChatList_ClearSearchHistory),
                 ActionSheetButtonItem(title: presentationData.strings.WebSearch_RecentSectionClear, color: .destructive, action: { [weak self, weak actionSheet] in
                     actionSheet?.dismissAnimated()
                     
@@ -417,6 +421,8 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
         self.presentationDataDisposable?.dispose()
         self.suggestedFiltersDisposable.dispose()
         self.shareStatusDisposable?.dispose()
+        
+        self.copyProtectionTooltipController?.dismiss()
     }
     
     private func updateState(_ f: (ChatListSearchContainerNodeSearchState) -> ChatListSearchContainerNodeSearchState) {
@@ -452,13 +458,17 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     
     private func updateSearchOptions(_ options: ChatListSearchOptions?, clearQuery: Bool = false) {
         var options = options
+        var tokens: [SearchBarToken] = []
+        if self.groupId == .archive {
+            tokens.append(SearchBarToken(id: ChatListTokenId.archive.rawValue, icon: UIImage(bundleImageName: "Chat List/Search/Archive"), title: self.presentationData.strings.ChatList_Archive, permanent: true))
+        }
+        
         if options?.isEmpty ?? true {
             options = nil
         }
         self.searchOptionsValue = options
         self.searchOptions.set(.single(options))
         
-        var tokens: [SearchBarToken] = []
         if let (peerId, isGroup, peerName) = options?.peer {
             let image: UIImage?
             if isGroup {
@@ -468,11 +478,11 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             } else {
                 image = UIImage(bundleImageName: "Chat List/Search/User")
             }
-            tokens.append(SearchBarToken(id: ChatListTokenId.peer.rawValue, icon:image, title: peerName))
+            tokens.append(SearchBarToken(id: ChatListTokenId.peer.rawValue, icon: image, title: peerName, permanent: false))
         }
         
         if let (_, _, dateTitle) = options?.date {
-            tokens.append(SearchBarToken(id: ChatListTokenId.date.rawValue, icon: UIImage(bundleImageName: "Chat List/Search/Calendar"), title: dateTitle))
+            tokens.append(SearchBarToken(id: ChatListTokenId.date.rawValue, icon: UIImage(bundleImageName: "Chat List/Search/Calendar"), title: dateTitle, permanent: false))
             
             self.suggestedDates.set(.single([]))
         }
@@ -519,7 +529,12 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
         self.paneContainerNode.requestSelectPane(key)
         self.updateSearchOptions(nil)
         self.searchTextUpdated(text: query ?? "")
-        self.setQuery?(nil, [], query ?? "")
+        
+        var tokens: [SearchBarToken] = []
+        if self.groupId == .archive {
+            tokens.append(SearchBarToken(id: ChatListTokenId.archive.rawValue, icon: UIImage(bundleImageName: "Chat List/Search/Archive"), title: self.presentationData.strings.ChatList_Archive, permanent: true))
+        }
+        self.setQuery?(nil, tokens, query ?? "")
     }
 
     override public func containerLayoutUpdated(_ layout: ContainerViewLayout, navigationBarHeight: CGFloat, transition: ContainedViewLayoutTransition) {
@@ -588,6 +603,64 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         return
                     }
                     strongSelf.forwardMessages(messageIds: nil)
+                }, displayCopyProtectionTip: { [weak self] node, save in
+                    guard let strongSelf = self, let messageIds = strongSelf.stateValue.selectedMessageIds, !messageIds.isEmpty else {
+                        return
+                    }
+                    let _ = (strongSelf.context.account.postbox.transaction { transaction -> [EngineMessage] in
+                        var messages: [EngineMessage] = []
+                        for id in messageIds {
+                            if let message = transaction.getMessage(id) {
+                                messages.append(EngineMessage(message))
+                            }
+                        }
+                        return messages
+                    }
+                    |> deliverOnMainQueue).start(next: { messages in
+                        if let strongSelf = self, !messages.isEmpty {
+                            enum PeerType {
+                                case group
+                                case channel
+                                case bot
+                            }
+                            var type: PeerType = .group
+                            for message in messages {
+                                if let user = message.author?._asPeer() as? TelegramUser, user.botInfo != nil {
+                                    type = .bot
+                                    break
+                                } else if let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info {
+                                    type = .channel
+                                    break
+                                }
+                            }
+                            
+                            let text: String
+                            switch type {
+                            case .group:
+                                text = save ? strongSelf.presentationData.strings.Conversation_CopyProtectionSavingDisabledGroup : strongSelf.presentationData.strings.Conversation_CopyProtectionForwardingDisabledGroup
+                            case .channel:
+                                text = save ? strongSelf.presentationData.strings.Conversation_CopyProtectionSavingDisabledChannel : strongSelf.presentationData.strings.Conversation_CopyProtectionForwardingDisabledChannel
+                            case .bot:
+                                text = save ? strongSelf.presentationData.strings.Conversation_CopyProtectionSavingDisabledBot : strongSelf.presentationData.strings.Conversation_CopyProtectionForwardingDisabledBot
+                            }
+                            
+                            strongSelf.copyProtectionTooltipController?.dismiss()
+                            let tooltipController = TooltipController(content: .text(text), baseFontSize: strongSelf.presentationData.listsFontSize.baseDisplaySize, dismissByTapOutside: true, dismissImmediatelyOnLayoutUpdate: true)
+                            strongSelf.copyProtectionTooltipController = tooltipController
+                            tooltipController.dismissed = { [weak tooltipController] _ in
+                                if let strongSelf = self, let tooltipController = tooltipController, strongSelf.copyProtectionTooltipController === tooltipController {
+                                    strongSelf.copyProtectionTooltipController = nil
+                                }
+                            }
+                            strongSelf.present?(tooltipController, TooltipControllerPresentationArguments(sourceNodeAndRect: {
+                                if let strongSelf = self {
+                                    let rect = node.view.convert(node.view.bounds, to: strongSelf.view).offsetBy(dx: 0.0, dy: 3.0)
+                                    return (strongSelf, rect)
+                                }
+                                return nil
+                            }))
+                        }
+                    })
                 })
                 selectionPanelNode.chatAvailableMessageActions = { [weak self] messageIds -> Signal<ChatAvailableMessageActions, NoError> in
                     guard let strongSelf = self else {
@@ -736,7 +809,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             return items
         }
         
-        let controller = ContextController(account: self.context.account, presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node)), items: items |> map { ContextController.Items(items: $0) }, recognizer: nil, gesture: gesture)
+        let controller = ContextController(account: self.context.account, presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, recognizer: nil, gesture: gesture)
         self.presentInGlobalOverlay?(controller, nil)
     }
     
@@ -763,13 +836,17 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             })
                         })))
                         
-                        items.append(.action(ContextMenuActionItem(text: strings.Conversation_ContextMenuForward, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor) }, action: { c, f in
-                            c.dismiss(completion: {
-                                if let strongSelf = self {
-                                    strongSelf.forwardMessages(messageIds: [message.id])
-                                }
-                            })
-                        })))
+                        if let peer = message.peers[message.id.peerId], peer.isCopyProtectionEnabled {
+                            
+                        } else {
+                            items.append(.action(ContextMenuActionItem(text: strings.Conversation_ContextMenuForward, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor) }, action: { c, f in
+                                c.dismiss(completion: {
+                                    if let strongSelf = self {
+                                        strongSelf.forwardMessages(messageIds: [message.id])
+                                    }
+                                })
+                            })))
+                        }
                         
                         items.append(.separator)
                         items.append(.action(ContextMenuActionItem(text: strings.Conversation_ContextMenuSelect, icon: { theme in
@@ -796,7 +873,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     switch previewData {
                         case let .gallery(gallery):
                             gallery.setHintWillBePresentedInPreviewingContext(true)
-                            let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: node)), items: items |> map { ContextController.Items(items: $0) }, gesture: gesture)
+                            let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                             strongSelf.presentInGlobalOverlay?(contextController, nil)
                         case .instantPage:
                             break

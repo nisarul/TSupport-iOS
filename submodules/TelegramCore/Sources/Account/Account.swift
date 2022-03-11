@@ -113,7 +113,7 @@ public class UnauthorizedAccount {
             }
             for id in datacenterIds {
                 if network.context.authInfoForDatacenter(withId: id, selector: .persistent) == nil {
-                    network.context.authInfoForDatacenter(withIdRequired: id, isCdn: false, selector: .ephemeralMain)
+                    network.context.authInfoForDatacenter(withIdRequired: id, isCdn: false, selector: .ephemeralMain, allowUnboundEphemeralKeys: false)
                 }
             }
             network.context.beginExplicitBackupAddressDiscovery()
@@ -174,6 +174,7 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
         isReadOnly: false,
         useCopy: false,
         useCaches: !supplementary,
+        removeDatabaseOnError: !supplementary,
         isSupportAccount: isSupportAccount
     )
     
@@ -200,6 +201,16 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                             state = backupState
                             let dict = NSMutableDictionary()
                             dict.setObject(MTDatacenterAuthInfo(authKey: backupData.masterDatacenterKey, authKeyId: backupData.masterDatacenterKeyId, saltSet: [], authKeyAttributes: [:])!, forKey: backupData.masterDatacenterId as NSNumber)
+                            
+                            for (id, datacenterKey) in backupData.additionalDatacenterKeys {
+                                dict.setObject(MTDatacenterAuthInfo(
+                                    authKey: datacenterKey.key,
+                                    authKeyId: datacenterKey.keyId,
+                                    saltSet: [],
+                                    authKeyAttributes: [:]
+                                )!, forKey: id as NSNumber)
+                            }
+                            
                             let data = NSKeyedArchiver.archivedData(withRootObject: dict)
                             transaction.setState(backupState)
                             transaction.setKeychainEntry(data, forKey: "persistent:datacenterAuthInfoById")
@@ -807,6 +818,34 @@ public func accountBackupData(postbox: Postbox) -> Signal<AccountBackupData?, No
         guard let datacenterAuthInfo = authInfo.object(forKey: state.masterDatacenterId as NSNumber) as? MTDatacenterAuthInfo else {
             return nil
         }
+        
+        var additionalDatacenterKeys: [Int32: AccountBackupData.DatacenterKey] = [:]
+        for item in authInfo {
+            guard let idNumber = item.key as? NSNumber else {
+                continue
+            }
+            guard let id = idNumber as? Int32 else {
+                continue
+            }
+            if id <= 0 || id > 10 {
+                continue
+            }
+            if id == state.masterDatacenterId {
+                continue
+            }
+            guard let otherDatacenterAuthInfo = authInfo.object(forKey: idNumber) as? MTDatacenterAuthInfo else {
+                continue
+            }
+            guard let otherAuthKey = otherDatacenterAuthInfo.authKey else {
+                continue
+            }
+            additionalDatacenterKeys[id] = AccountBackupData.DatacenterKey(
+                id: id,
+                keyId: otherDatacenterAuthInfo.authKeyId,
+                key: otherAuthKey
+            )
+        }
+        
         guard let authKey = datacenterAuthInfo.authKey else {
             return nil
         }
@@ -817,7 +856,8 @@ public func accountBackupData(postbox: Postbox) -> Signal<AccountBackupData?, No
             masterDatacenterKey: authKey,
             masterDatacenterKeyId: datacenterAuthInfo.authKeyId,
             notificationEncryptionKeyId: notificationsKey?.id,
-            notificationEncryptionKey: notificationsKey?.data
+            notificationEncryptionKey: notificationsKey?.data,
+            additionalDatacenterKeys: additionalDatacenterKeys
         )
     }
 }
@@ -1047,9 +1087,13 @@ public class Account {
         self.managedOperationsDisposable.add(managedLocalTypingActivities(activities: self.localInputActivityManager.allActivities(), postbox: self.postbox, network: self.network, accountPeerId: self.peerId).start())
         self.managedOperationsDisposable.add(managedSynchronizeConsumeMessageContentOperations(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
         self.managedOperationsDisposable.add(managedConsumePersonalMessagesActions(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
+        self.managedOperationsDisposable.add(managedReadReactionActions(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
         self.managedOperationsDisposable.add(managedSynchronizeMarkAllUnseenPersonalMessagesOperations(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
+        self.managedOperationsDisposable.add(managedSynchronizeMarkAllUnseenReactionsOperations(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
+        self.managedOperationsDisposable.add(managedApplyPendingMessageReactionsActions(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
         self.managedOperationsDisposable.add(managedSynchronizeEmojiKeywordsOperations(postbox: self.postbox, network: self.network).start())
         self.managedOperationsDisposable.add(managedApplyPendingScheduledMessagesActions(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
+        self.managedOperationsDisposable.add(managedSynchronizeAvailableReactions(postbox: self.postbox, network: self.network).start())
 
         if !supplementary {
             self.managedOperationsDisposable.add(managedChatListFilters(postbox: self.postbox, network: self.network, accountPeerId: self.peerId).start())
@@ -1298,6 +1342,7 @@ public func standaloneStateManager(
         isReadOnly: false,
         useCopy: false,
         useCaches: false,
+        removeDatabaseOnError: false,
         isSupportAccount: isSupportAccount
     )
 

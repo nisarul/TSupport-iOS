@@ -471,13 +471,11 @@ open class ItemListControllerNode: ASDisplayNode {
         insets.top += navigationBarHeight
         insets.bottom = max(insets.bottom, additionalInsets.bottom)
         
-        var addedInsets: UIEdgeInsets?
         let inset = max(16.0, floor((layout.size.width - 674.0) / 2.0))
         if layout.size.width >= 375.0 {
             insets.left += inset
             insets.right += inset
         }
-        addedInsets = UIEdgeInsets(top: 0.0, left: inset, bottom: 0.0, right: inset)
         
         if self.rightOverlayNode.supernode == nil {
             self.insertSubnode(self.rightOverlayNode, aboveSubnode: self.listNode)
@@ -503,7 +501,7 @@ open class ItemListControllerNode: ASDisplayNode {
                 transition.updateFrame(node: toolbarNode, frame: toolbarFrame)
                 toolbarNode.updateLayout(size: toolbarFrame.size, leftInset: layout.safeInsets.left, rightInset: layout.safeInsets.right, additionalSideInsets: layout.additionalInsets, bottomInset: layout.intrinsicInsets.bottom, toolbar: toolbarItem.toolbar, transition: transition)
             } else if let theme = self.theme {
-                let toolbarNode = ToolbarNode(theme: TabBarControllerTheme(rootControllerTheme: theme), displaySeparator: true)
+                let toolbarNode = ToolbarNode(theme: ToolbarTheme(rootControllerTheme: theme), displaySeparator: true)
                 toolbarNode.frame = toolbarFrame
                 toolbarNode.updateLayout(size: toolbarFrame.size, leftInset: layout.safeInsets.left, rightInset: layout.safeInsets.right, additionalSideInsets: layout.additionalInsets, bottomInset: layout.intrinsicInsets.bottom, toolbar: toolbarItem.toolbar, transition: .immediate)
                 self.addSubnode(toolbarNode)
@@ -551,10 +549,6 @@ open class ItemListControllerNode: ASDisplayNode {
         self.rightOverlayNode.frame = CGRect(x: layout.size.width - insets.right, y: 0.0, width: insets.right, height: layout.size.height)
         
         if let emptyStateNode = self.emptyStateNode {
-            var layout = layout
-            if let addedInsets = addedInsets {
-                layout = layout.addedInsets(insets: addedInsets)
-            }
             emptyStateNode.updateLayout(layout: layout, navigationBarHeight: navigationBarHeight, transition: transition)
         }
         
