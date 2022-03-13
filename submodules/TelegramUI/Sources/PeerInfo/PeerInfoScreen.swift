@@ -64,6 +64,8 @@ import CalendarMessageScreen
 import TooltipUI
 import QrCodeUI
 import Translate
+import ChatPresentationInterfaceState
+import CreateExternalMediaStreamScreen
 
 protocol PeerInfoScreenItem: AnyObject {
     var id: AnyHashable { get }
@@ -668,15 +670,16 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
             }))
         }
     }
+
     /** TSupport: Disabling 'Saved Messages', 'Recent Calls' and 'Devices' settings for support accounts **/
     if !context.account.isSupportAccount {
-        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {
             interaction.openSettings(.savedMessages)
         }))
-        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.CallSettings_RecentCalls, icon: PresentationResourcesSettings.recentCalls, action: {
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.CallSettings_RecentCalls, icon: PresentationResourcesSettings.recentCalls, action: {
             interaction.openSettings(.recentCalls)
         }))
-        
+    
         let devicesLabel: String
         if let settings = data.globalSettings, let otherSessionsCount = settings.otherSessionsCount {
             if settings.enableQRLogin {
@@ -687,12 +690,12 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
         } else {
             devicesLabel = ""
         }
-        
-        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 2, label: .text(devicesLabel), text: presentationData.strings.Settings_Devices, icon: PresentationResourcesSettings.devices, action: {
+    
+        items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 3, label: .text(devicesLabel), text: presentationData.strings.Settings_Devices, icon: PresentationResourcesSettings.devices, action: {
             interaction.openSettings(.devices)
         }))
     }
-    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 3, text: presentationData.strings.Settings_ChatFolders, icon: PresentationResourcesSettings.chatFolders, action: {
+    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 4, text: presentationData.strings.Settings_ChatFolders, icon: PresentationResourcesSettings.chatFolders, action: {
         interaction.openSettings(.chatFolders)
     }))
     
@@ -4127,6 +4130,10 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
         self.context.scheduleGroupCall(peerId: self.peerId)
     }
     
+    private func createExternalStream(credentialsPromise: Promise<GroupCallStreamCredentials>?) {
+        self.controller?.push(CreateExternalMediaStreamScreen(context: self.context, peerId: self.peerId, credentialsPromise: credentialsPromise))
+    }
+    
     private func createAndJoinGroupCall(peerId: PeerId, joinAsPeerId: PeerId?) {
         if let _ = self.context.sharedContext.callManager {
             let startCall: (Bool) -> Void = { [weak self] endCurrentIfAny in
@@ -4150,7 +4157,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                 |> runOn(Queue.mainQueue())
                 |> delay(0.15, queue: Queue.mainQueue())
                 let progressDisposable = progressSignal.start()
-                let createSignal = strongSelf.context.engine.calls.createGroupCall(peerId: peerId, title: nil, scheduleDate: nil)
+                let createSignal = strongSelf.context.engine.calls.createGroupCall(peerId: peerId, title: nil, scheduleDate: nil, isExternalStream: false)
                 |> afterDisposed {
                     Queue.mainQueue().async {
                         progressDisposable.dispose()
@@ -4166,7 +4173,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                     }
                     strongSelf.context.joinGroupCall(peerId: peerId, invite: nil, requestJoinAsPeerId: { result in
                         result(joinAsPeerId)
-                    }, activeCall: EngineGroupCallDescription(id: info.id, accessHash: info.accessHash, title: info.title, scheduleTimestamp: nil, subscribedToScheduled: false))
+                    }, activeCall: EngineGroupCallDescription(id: info.id, accessHash: info.accessHash, title: info.title, scheduleTimestamp: nil, subscribedToScheduled: false, isStream: info.isStream))
                 }, error: { [weak self] error in
                     guard let strongSelf = self else {
                         return
@@ -4482,6 +4489,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
     }
     
     private func openVoiceChatOptions(defaultJoinAsPeerId: PeerId?, gesture: ContextGesture? = nil, contextController: ContextControllerProtocol? = nil) {
+        guard let chatPeer = self.data?.peer else {
+            return
+        }
         let context = self.context
         let peerId = self.peerId
         let defaultJoinAsPeerId = defaultJoinAsPeerId ?? self.context.account.peerId
@@ -4548,6 +4558,31 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                 
                 self?.scheduleGroupCall()
             })))
+            
+            var credentialsPromise: Promise<GroupCallStreamCredentials>?
+            var canCreateStream = false
+            switch chatPeer {
+            case let group as TelegramGroup:
+                if case .creator = group.role {
+                    canCreateStream = true
+                }
+            case let channel as TelegramChannel:
+                if channel.flags.contains(.isCreator) {
+                    canCreateStream = true
+                    credentialsPromise = Promise()
+                    credentialsPromise?.set(context.engine.calls.getGroupCallStreamCredentials(peerId: peerId, revokePreviousCredentials: false) |> `catch` { _ -> Signal<GroupCallStreamCredentials, NoError> in return .never() })
+                }
+            default:
+                break
+            }
+            
+            if canCreateStream {
+                items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.ChannelInfo_CreateExternalStream, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/VoiceChat"), color: theme.contextMenu.primaryColor) }, action: { _, f in
+                    f(.dismissWithoutContent)
+                    
+                    self?.createExternalStream(credentialsPromise: credentialsPromise)
+                })))
+            }
             
             if let contextController = contextController {
                 contextController.setItems(.single(ContextController.Items(content: .list(items))), minHeight: nil)
@@ -7895,7 +7930,7 @@ private final class PeerInfoContextReferenceContentSource: ContextReferenceConte
     }
     
     func transitionInfo() -> ContextControllerReferenceViewInfo? {
-        return ContextControllerReferenceViewInfo(referenceNode: self.sourceNode, contentAreaInScreenSpace: UIScreen.main.bounds)
+        return ContextControllerReferenceViewInfo(referenceView: self.sourceNode.view, contentAreaInScreenSpace: UIScreen.main.bounds)
     }
 }
 
@@ -8094,7 +8129,7 @@ func presentAddMembers(context: AccountContext, updatedPresentationData: (initia
         if let contactsController = contactsController as? ContactSelectionController {
             selectAddMemberDisposable.set((contactsController.result
             |> deliverOnMainQueue).start(next: { [weak contactsController] result in
-                guard let (peers, _) = result, let memberPeer = peers.first else {
+                guard let (peers, _, _, _, _) = result, let memberPeer = peers.first else {
                     return
                 }
                 

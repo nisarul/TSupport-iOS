@@ -443,6 +443,7 @@
 "DialogList.TabTitle" = "Chats";
 "DialogList.Title" = "Chats";
 "DialogList.SearchLabel" = "Search for messages or users";
+"DialogList.SearchLabelCompact" = "Search";
 "DialogList.NoMessagesTitle" = "You have no conversations yet";
 "DialogList.NoMessagesText" = "Start messaging by pressing the pencil button in the top right corner or go to the Contacts section.";
 "DialogList.SingleTypingSuffix" = "%@ is typing";
@@ -7257,3 +7258,111 @@ Sorry for the inconvenience.";
 
 "SharedMedia.CommonGroupCount_1" = "%@ group in common";
 "SharedMedia.CommonGroupCount_any" = "%@ groups in common";
+
+"Attachment.Camera" = "Camera";
+"Attachment.Gallery" = "Gallery";
+"Attachment.File" = "File";
+"Attachment.Location" = "Location";
+"Attachment.Contact" = "Contact";
+"Attachment.Poll" = "Poll";
+
+"Attachment.SelectFromGallery" = "Select from Gallery";
+"Attachment.SelectFromFiles" = "Select from Files";
+
+"Attachment.AllMedia" = "All";
+
+"Attachment.SelectedMedia_1" = "%@ Selected";
+"Attachment.SelectedMedia_2" = "%@ Selected";
+"Attachment.SelectedMedia_3_10" = "%@ Selected";
+"Attachment.SelectedMedia_any" = "%@ Selected";
+"Attachment.SelectedMedia_many" = "%@ Selected";
+"Attachment.SelectedMedia_0" = "%@ Selected";
+
+"Attachment.SendAsFile" = "Send as File";
+"Attachment.SendAsFiles" = "Send as Files";
+
+"Attachment.Grouped" = "Grouped";
+"Attachment.Ungrouped" = "Ungrouped";
+
+"Attachment.MessagePreview" = "Message Preview";
+"Attachment.MessagesPreview" = "Messages Preview";
+"Attachment.DragToReorder" = "Drag media to reorder";
+
+"Attachment.SearchWeb" = "Search Web";
+
+"Attachment.RecentlySentFiles" = "Recently Sent Files";
+
+"ReportPeer.ReasonIllegalDrugs" = "Illegal Drugs";
+"ReportPeer.ReasonPersonalDetails" = "Personal Details";
+
+"Attachment.FilesIntro" = "Send and receive files of any type, up to 2 GB\nin size each, access them instantly\non your other devices.";
+"Attachment.FilesSearchPlaceholder" = "Search sent files";
+
+"Attachment.MediaAccessTitle" = "Access Your Photos and Videos";
+"Attachment.MediaAccessText" = "Share an unlimited number of photos and videos of up to 2 GB each.";
+
+"Attachment.LimitedMediaAccessText" = "You have limited Telegram from accessing all of your photos.";
+"Attachment.CameraAccessText" = "Telegram needs camera access so that you can take photos and videos.";
+"Attachment.Manage" = "Manage";
+
+"Attachment.OpenSettings" = "Go to Settings";
+"Attachment.OpenCamera" = "Open Camera";
+
+"Attachment.DeselectedPhotos_1" = "%@ photo deselected";
+"Attachment.DeselectedPhotos_any" = "%@ photos deselected";
+
+"Attachment.DeselectedVideos_1" = "%@ video deselected";
+"Attachment.DeselectedVideos_any" = "%@ videos deselected";
+
+"Attachment.DeselectedItems_1" = "%@ item deselected";
+"Attachment.DeselectedItems_any" = "%@ items deselected";
+
+"PrivacyPhoneNumberSettings.CustomPublicLink" = "Users who have your number saved in their contacts will also see it on Telegram.\n\nThis public link opens a chat with you:\n[https://t.me/%@]()";
+
+"DownloadList.DownloadingHeader" = "Downloading";
+"DownloadList.DownloadedHeader" = "Recently Downloaded";
+"DownloadList.PauseAll" = "Pause All";
+"DownloadList.ResumeAll" = "Resume All";
+"DownloadList.Clear" = "Clear";
+"DownloadList.OptionManageDeviceStorage" = "Manage Device Storage";
+"DownloadList.ClearDownloadList" = "Clear Download List";
+"DownloadList.DeleteFromCache" = "Delete from Cache";
+"DownloadList.RaisePriority" = "Raise Priority";
+"DownloadList.CancelDownloading" = "Cancel Downloading";
+
+"DownloadList.RemoveFileAlertTitle_1" = "Remove Document?";
+"DownloadList.RemoveFileAlertTitle_any" = "Remove %@ Documents?";
+"DownloadList.RemoveFileAlertText_1" = "Are you sure you want to remove this\ndocument from Downloads?\nIt will be deleted from your disk, but\nwill remain accessible in the cloud.";
+"DownloadList.RemoveFileAlertText_any" = "Are you sure you want to remove these\n%@ documents from Downloads?\nThey will be deleted from your disk, but\nwill remain accessible in the cloud.";
+"DownloadList.RemoveFileAlertRemove" = "Remove";
+
+"DownloadList.ClearAlertTitle" = "Downloaded Files";
+"DownloadList.ClearAlertText" = "Telegram allows to store all received and sent\ndocuments in the cloud and save storage\nspace on your device.";
+
+"ChatList.Search.FilterDownloads" = "Downloads";
+
+"LiveStream.NoViewers" = "No viewers";
+"LiveStream.ViewerCount_1" = "1 viewer";
+"LiveStream.ViewerCount_any" = "%@ viewers";
+
+"LiveStream.NoSignalAdminText" = "Oops! Telegram doesn't see any stream\ncoming from your streaming app.\n\nPlease make sure you entered the right Server\nURL and Stream Key in your app.";
+"LiveStream.NoSignalUserText" = "%@ is currently not broadcasting live\nstream data to Telegram.";
+
+"Attachment.MyAlbums" = "My Albums";
+"Attachment.MediaTypes" = "Media Types";
+
+"Attachment.LocationAccessTitle" = "Access Your Location";
+"Attachment.LocationAccessText" = "Share places or your live location.";
+
+"Attachment.CancelSelectionAlertText" = "Cancel selection?";
+"Attachment.CancelSelectionAlertYes" = "Yes";
+"Attachment.CancelSelectionAlertNo" = "No";
+
+"ChannelInfo.CreateExternalStream" = "Stream With...";
+
+"CreateExternalStream.Title" = "Stream With...";
+"CreateExternalStream.Text" = "To stream video with a another app, enter\nthese Server URL and Stream Key in your\nsteaming app.";
+"CreateExternalStream.ServerUrl" = "server URL";
+"CreateExternalStream.StreamKey" = "stream key";
+"CreateExternalStream.StartStreamingInfo" = "Once you start broadcasting in your streaming\napp, tap Start Streaming below.";
+"CreateExternalStream.StartStreaming" = "Start Streaming";
