@@ -818,6 +818,7 @@ public class ItemListAvatarAndNameInfoItemNode: ListViewItemNode, ItemListItemNo
                                 
                                 if strongSelf.inputFirstField == nil {
                                     let inputFirstField = TextFieldNodeView()
+                                    inputFirstField.returnKeyType = .done
                                     inputFirstField.delegate = self
                                     inputFirstField.font = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 19.0 / 17.0))
                                     inputFirstField.autocorrectionType = .no

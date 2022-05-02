@@ -159,6 +159,7 @@ private final class DrawingStickersScreenNode: ViewControllerTracingNode {
         }, commitEmojiInteraction: { _, _, _, _ in
         }, openLargeEmojiInfo: { _, _, _ in
         }, openJoinLink: { _ in
+        }, openWebView: { _, _, _, _ in
         }, requestMessageUpdate: { _ in
         }, cancelInteractiveKeyboardGestures: {
         }, automaticMediaDownloadSettings: (context.account.isSupportAccount ? MediaAutoDownloadSettings.defaultSupportSettings : MediaAutoDownloadSettings.defaultSettings),
