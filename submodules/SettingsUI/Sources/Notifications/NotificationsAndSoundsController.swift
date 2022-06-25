@@ -675,9 +675,7 @@ public func notificationsAndSoundsController(context: AccountContext, exceptions
             ActionSheetButtonItem(title: presentationData.strings.Notifications_Reset, color: .destructive, action: { [weak actionSheet] in
                 actionSheet?.dismissAnimated()
                 
-                let modifyPeers = context.account.postbox.transaction { transaction -> Void in
-                    transaction.resetAllPeerNotificationSettings(TelegramPeerNotificationSettings.defaultSettings)
-                }
+                let modifyPeers = context.engine.peers.resetAllPeerNotificationSettings()
                 let updateGlobal = updateGlobalNotificationSettingsInteractively(postbox: context.account.postbox, isSupportAccount: context.account.isSupportAccount, { _ in
                     return (context.account.isSupportAccount ? GlobalNotificationSettingsSet.defaultSupportSettings : GlobalNotificationSettingsSet.defaultSettings)
                 })
