@@ -285,6 +285,7 @@ class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDelegate {
     private var leftMenuInset: CGFloat = 0.0
     
     var displayAttachmentMenu: () -> Void = { }
+    var displayTSupportTemplates: () -> Void = { }
     var sendMessage: () -> Void = { }
     var paste: (ChatTextInputPanelPasteData) -> Void = { _ in }
     var updateHeight: (Bool) -> Void = { _ in }
@@ -559,6 +560,8 @@ class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDelegate {
         
         self.attachmentButton.addTarget(self, action: #selector(self.attachmentButtonPressed), forControlEvents: .touchUpInside)
         self.attachmentButtonDisabledNode.addTarget(self, action: #selector(self.attachmentButtonPressed), forControlEvents: .touchUpInside)
+        /** TSupport: Swipe up the attachment icon to use templates **/
+        self.attachmentButton.addTarget(self, action: #selector(self.attachmentButtonSwipedUp), forControlEvents: .touchUpOutside)
   
         self.actionButtons.sendButtonLongPressed = { [weak self] node, gesture in
             self?.interfaceInteraction?.displaySendMessageOptions(node, gesture)
@@ -2650,6 +2653,10 @@ class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDelegate {
         self.displayAttachmentMenu()
     }
     
+    @objc func attachmentButtonSwipedUp() {
+        self.displayTSupportTemplates()
+    }
+
     @objc func searchLayoutClearButtonPressed() {
         if let interfaceInteraction = self.interfaceInteraction {
             interfaceInteraction.updateTextInputStateAndMode { textInputState, inputMode in

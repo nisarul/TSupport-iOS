@@ -6156,6 +6156,23 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 strongSelf.presentAttachmentMenu(editMediaOptions: nil, editMediaReference: nil)
             }
         }
+        self.chatDisplayNode.displayTSupportTemplates = { [weak self] in
+            guard let strongSelf = self else {
+                return
+            }
+            if (strongSelf.context.account.isSupportAccount || true) {
+                let _ = (strongSelf.context.engine.peers.resolvePeerByName(name: "tl_bot")
+                |> deliverOnMainQueue).start(next: { peer in
+                    if peer != nil {
+                        strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, {
+                            $0.updatedInterfaceState({ $0.withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: "@tl_bot "))) }).updatedInputMode({ _ in
+                                return .text
+                            })
+                        })
+                    }
+                })
+            }
+        }
         self.chatDisplayNode.paste = { [weak self] data in
             switch data {
                 case let .images(images):
