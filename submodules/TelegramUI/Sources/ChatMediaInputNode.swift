@@ -295,7 +295,7 @@ func chatMediaInputGridEntries(view: ItemCollectionsView, savedStickers: Ordered
         
         let filteredTrending = trendingPacks.filter { !installedPacks.contains($0.info.id) }
         if !trendingIsDismissed && !filteredTrending.isEmpty {
-            entries.append(.trendingList(theme: theme, strings: strings, packs: filteredTrending, isPremium: false))
+            entries.append(.trendingList(theme: theme, strings: strings, packs: filteredTrending, isPremium: trendingIsPremium))
         }
         
         if let recentStickers = recentStickers, !recentStickers.items.isEmpty {
@@ -2656,6 +2656,15 @@ final class ChatMediaInputNode: ChatInputNode {
         transition.updatePosition(node: self.gifListView, position: CGPoint(x: self.gifListView.position.x, y: (41.0 - collectionListPanelOffset) / 2.0))
 
         self.updatePaneClippingContainer(size: self.paneClippingContainer.bounds.size, offset: collectionListPanelOffset, transition: transition)
+    }
+    
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if self.panelIsFocused {
+            if point.y > -41.0 {
+                return true
+            }
+        }
+        return super.point(inside: point, with: event)
     }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
