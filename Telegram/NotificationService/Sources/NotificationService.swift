@@ -875,7 +875,7 @@ private final class NotificationServiceHandler {
 
                     enum Action {
                         case logout
-                        case poll(peerId: PeerId, content: NotificationContent)
+                        case poll(peerId: PeerId, content: NotificationContent, messageId: MessageId?)
                         case deleteMessage([MessageId])
                         case readMessage(MessageId)
                         case call(CallData)
@@ -891,7 +891,7 @@ private final class NotificationServiceHandler {
                             action = .logout
                         case "MESSAGE_MUTED":
                             if let peerId = peerId {
-                                action = .poll(peerId: peerId, content: NotificationContent(isLockedMessage: nil))
+                                action = .poll(peerId: peerId, content: NotificationContent(isLockedMessage: nil), messageId: nil)
                             }
                         case "MESSAGE_DELETED":
                             if let peerId = peerId {
@@ -932,9 +932,12 @@ private final class NotificationServiceHandler {
                                 return
                             }
 
+                            var messageIdValue: MessageId?
                             if let messageId = messageId {
                                 content.userInfo["msg_id"] = "\(messageId)"
                                 interactionAuthorId = peerId
+                                
+                                messageIdValue = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: messageId)
                             }
 
                             if peerId.namespace == Namespaces.Peer.CloudUser {
@@ -1023,7 +1026,7 @@ private final class NotificationServiceHandler {
                                 }
                             }*/
 
-                            action = .poll(peerId: peerId, content: content)
+                            action = .poll(peerId: peerId, content: content, messageId: messageIdValue)
 
                             updateCurrentContent(content)
                         }
@@ -1068,7 +1071,7 @@ private final class NotificationServiceHandler {
                             let content = NotificationContent(isLockedMessage: nil)
                             updateCurrentContent(content)
                             completed()
-                        case let .poll(peerId, initialContent):
+                        case let .poll(peerId, initialContent, messageId):
                             Logger.shared.log("NotificationService \(episode)", "Will poll")
                             if let stateManager = strongSelf.stateManager {
                                 let pollCompletion: (NotificationContent) -> Void = { content in
@@ -1327,12 +1330,31 @@ private final class NotificationServiceHandler {
                                 }
 
                                 let pollWithUpdatedContent: Signal<NotificationContent, NoError>
-                                if let interactionAuthorId = interactionAuthorId {
+                                if interactionAuthorId != nil || messageId != nil {
                                     pollWithUpdatedContent = stateManager.postbox.transaction { transaction -> NotificationContent in
                                         var content = initialContent
-
-                                        if inAppNotificationSettings.displayNameOnLockscreen, let peer = transaction.getPeer(interactionAuthorId) {
-                                            content.addSenderInfo(mediaBox: stateManager.postbox.mediaBox, accountPeerId: stateManager.accountPeerId, peer: peer)
+                                        
+                                        if let interactionAuthorId = interactionAuthorId {
+                                            if inAppNotificationSettings.displayNameOnLockscreen, let peer = transaction.getPeer(interactionAuthorId) {
+                                                content.addSenderInfo(mediaBox: stateManager.postbox.mediaBox, accountPeerId: stateManager.accountPeerId, peer: peer)
+                                            }
+                                        }
+                                        
+                                        if let messageId = messageId {
+                                            if let readState = transaction.getCombinedPeerReadState(messageId.peerId) {
+                                                for (namespace, state) in readState.states {
+                                                    if namespace == messageId.namespace {
+                                                        switch state {
+                                                        case let .idBased(maxIncomingReadId, _, _, _, _):
+                                                            if maxIncomingReadId >= messageId.id {
+                                                                content = NotificationContent(isLockedMessage: nil)
+                                                            }
+                                                        case .indexBased:
+                                                            break
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
 
                                         return content
