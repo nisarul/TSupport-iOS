@@ -1,0 +1,4 @@
+module StringTransliteration {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/StringTransliteration/PublicHeaders/StringTransliteration/StringTransliteration.h"
+    export *
+}

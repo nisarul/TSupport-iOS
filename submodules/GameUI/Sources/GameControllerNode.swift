@@ -65,8 +65,6 @@ final class GameControllerNode: ViewControllerTracingNode {
         configuration.allowsInlineMediaPlayback = true
         if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
             configuration.mediaTypesRequiringUserActionForPlayback = []
-        } else if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
-            configuration.requiresUserActionForMediaPlayback = false
         } else {
             configuration.mediaPlaybackRequiresUserAction = false
         }
@@ -146,9 +144,9 @@ final class GameControllerNode: ViewControllerTracingNode {
         if eventName == "share_game" || eventName == "share_score" {
             if let (botPeer, gameName) = self.shareData(), let addressName = botPeer.addressName, !addressName.isEmpty, !gameName.isEmpty {
                 if eventName == "share_score" {
-                    self.present(ShareController(context: self.context, subject: .fromExternal({ [weak self] peerIds, text, account, _ in
+                    self.present(ShareController(context: self.context, subject: .fromExternal({ [weak self] peerIds, threadIds, text, account, _ in
                         if let strongSelf = self, let message = strongSelf.message {
-                            let signals = peerIds.map { TelegramEngine(account: account).messages.forwardGameWithScore(messageId: message.id, to: $0, as: nil) }
+                            let signals = peerIds.map { TelegramEngine(account: account).messages.forwardGameWithScore(messageId: message.id, to: $0, threadId: threadIds[$0], as: nil) }
                             return .single(.preparing(false))
                             |> castError(ShareControllerError.self)
                             |> then(

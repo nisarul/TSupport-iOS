@@ -89,11 +89,15 @@ public final class TelegramGroup: Peer, Equatable {
     public let version: Int
     
     public var indexName: PeerIndexNameRepresentation {
-        return .title(title: self.title, addressName: nil)
+        return .title(title: self.title, addressNames: [])
     }
+    
+    public var associatedMediaIds: [MediaId]? { return nil }
     
     public let associatedPeerId: PeerId? = nil
     public let notificationSettingsPeerId: PeerId? = nil
+    
+    public var timeoutAttribute: UInt32? { return nil }
     
     public init(id: PeerId, title: String, photo: [TelegramMediaImageRepresentation], participantCount: Int, role: TelegramGroupRole, membership: TelegramGroupMembership, flags: TelegramGroupFlags, defaultBannedRights: TelegramChatBannedRights?, migrationReference: TelegramGroupToChannelMigrationReference?, creationDate: Int32, version: Int) {
         self.id = id
@@ -142,6 +146,7 @@ public final class TelegramGroup: Peer, Equatable {
         encoder.encodeInt32(Int32(self.participantCount), forKey: "pc")
         encoder.encodeObject(self.role, forKey: "rv")
         encoder.encodeInt32(self.membership.rawValue, forKey: "m")
+        encoder.encodeInt32(self.flags.rawValue, forKey: "f")
         if let defaultBannedRights = self.defaultBannedRights {
             encoder.encodeObject(defaultBannedRights, forKey: "dbr")
         } else {

@@ -31,6 +31,8 @@ import ChatPresentationInterfaceState
 import Pasteboard
 import SettingsUI
 import PremiumUI
+import TextNodeWithEntities
+import ChatControllerInteraction
 
 private struct MessageContextMenuData {
     let starStatus: Bool?
@@ -210,12 +212,14 @@ private func canViewReadStats(message: Message, participantCount: Int?, isMessag
     case let channel as TelegramChannel:
         if case .broadcast = channel.info {
             return false
-        } else if let participantCount = participantCount {
-            if participantCount > maxParticipantCount {
+        } else {
+            if let participantCount = participantCount {
+                if participantCount > maxParticipantCount {
+                    return false
+                }
+            } else {
                 return false
             }
-        } else {
-            return false
         }
     case let group as TelegramGroup:
         if group.participantCount > maxParticipantCount {
@@ -255,12 +259,31 @@ func canReplyInChat(_ chatPresentationInterfaceState: ChatPresentationInterfaceS
         break
     }
     
+    if let channel = peer as? TelegramChannel, channel.flags.contains(.isForum) {
+        if let threadData = chatPresentationInterfaceState.threadData {
+            if threadData.isClosed {
+                var canManage = false
+                if channel.flags.contains(.isCreator) {
+                    canManage = true
+                } else if channel.hasPermission(.manageTopics) {
+                    canManage = true
+                } else if threadData.isOwnedByMe {
+                    canManage = true
+                }
+                
+                if !canManage {
+                    return false
+                }
+            }
+        }
+    }
+    
     var canReply = false
     switch chatPresentationInterfaceState.chatLocation {
     case .peer:
         if let channel = peer as? TelegramChannel {
             if case .member = channel.participationStatus {
-                canReply = channel.hasPermission(.sendMessages)
+                canReply = channel.hasPermission(.sendSomething)
             }
         } else if let group = peer as? TelegramGroup {
             if case .Member = group.membership {
@@ -380,23 +403,70 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         hasExpandedAudioTranscription = messageNode.hasExpandedAudioTranscription()
     }
 
-    if messages.count == 1, let _ = messages[0].adAttribute {
+    if messages.count == 1, let adAttribute = messages[0].adAttribute {
         let message = messages[0]
 
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-
+        
         var actions: [ContextMenuItem] = []
-        actions.append(.action(ContextMenuActionItem(text: presentationData.strings.SponsoredMessageMenu_Info, textColor: .primary, textLayout: .twoLinesMax, textFont: .custom(Font.regular(presentationData.listsFontSize.baseDisplaySize - 1.0)), badge: nil, icon: { theme in
+        
+        if adAttribute.sponsorInfo != nil || adAttribute.additionalInfo != nil {
+            actions.append(.action(ContextMenuActionItem(text: presentationData.strings.Chat_ContextMenu_AdSponsorInfo, textColor: .primary, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Channels"), color: theme.actionSheet.primaryTextColor)
+            }, iconSource: nil, action: { c, _ in
+                var subItems: [ContextMenuItem] = []
+                
+                subItems.append(.action(ContextMenuActionItem(text: presentationData.strings.Common_Back, textColor: .primary, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Back"), color: theme.actionSheet.primaryTextColor)
+                }, iconSource: nil, iconPosition: .left, action: { c, _ in
+                    c.popItems()
+                })))
+                
+                subItems.append(.separator)
+                
+                if let sponsorInfo = adAttribute.sponsorInfo {
+                    subItems.append(.action(ContextMenuActionItem(text: sponsorInfo, textColor: .primary, textLayout: .multiline, textFont: .custom(font: Font.regular(floor(presentationData.listsFontSize.baseDisplaySize * 0.8)), height: nil, verticalOffset: nil), badge: nil, icon: { theme in
+                        return nil
+                    }, iconSource: nil, action: { [weak controllerInteraction] c, _ in
+                        c.dismiss(completion: {
+                            UIPasteboard.general.string = sponsorInfo
+                            
+                            let content: UndoOverlayContent = .copy(text: presentationData.strings.Chat_ContextMenu_AdSponsorInfoCopied)
+                            controllerInteraction?.displayUndo(content)
+                        })
+                    })))
+                }
+                if let additionalInfo = adAttribute.additionalInfo {
+                    subItems.append(.action(ContextMenuActionItem(text: additionalInfo, textColor: .primary, textLayout: .multiline, textFont: .custom(font: Font.regular(floor(presentationData.listsFontSize.baseDisplaySize * 0.8)), height: nil, verticalOffset: nil), badge: nil, icon: { theme in
+                        return nil
+                    }, iconSource: nil, action: { [weak controllerInteraction] c, _ in
+                        c.dismiss(completion: {
+                            UIPasteboard.general.string = additionalInfo
+                            
+                            let content: UndoOverlayContent = .copy(text: presentationData.strings.Chat_ContextMenu_AdSponsorInfoCopied)
+                            controllerInteraction?.displayUndo(content)
+                        })
+                    })))
+                }
+                
+                c.pushItems(items: .single(ContextController.Items(content: .list(subItems))))
+            })))
+            actions.append(.separator)
+        }
+        
+        actions.append(.action(ContextMenuActionItem(text: presentationData.strings.SponsoredMessageMenu_Info, textColor: .primary, textLayout: .twoLinesMax, textFont: .custom(font: Font.regular(presentationData.listsFontSize.baseDisplaySize - 1.0), height: nil, verticalOffset: nil), badge: nil, icon: { theme in
             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Info"), color: theme.actionSheet.primaryTextColor)
-        }, iconSource: nil, action: { c, _ in
-            c.dismiss(completion: {
+        }, iconSource: nil, action: { _, f in
+            /*c.dismiss(completion: {
                 controllerInteraction.navigationController()?.pushViewController(AdInfoScreen(context: context))
-            })
+            })*/
+            f(.dismissWithoutContent)
+            controllerInteraction.navigationController()?.pushViewController(AdInfoScreen(context: context))
         })))
         
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
         if !chatPresentationInterfaceState.isPremium && !premiumConfiguration.isPremiumDisabled {
-            actions.append(.action(ContextMenuActionItem(text: presentationData.strings.SponsoredMessageMenu_Hide, textColor: .primary, textLayout: .twoLinesMax, textFont: .custom(Font.regular(presentationData.listsFontSize.baseDisplaySize - 1.0)), badge: nil, icon: { theme in
+            actions.append(.action(ContextMenuActionItem(text: presentationData.strings.SponsoredMessageMenu_Hide, textColor: .primary, textLayout: .twoLinesMax, textFont: .custom(font: Font.regular(presentationData.listsFontSize.baseDisplaySize - 1.0), height: nil, verticalOffset: nil), badge: nil, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"), color: theme.actionSheet.primaryTextColor)
             }, iconSource: nil, action: { c, _ in
                 c.dismiss(completion: {
@@ -421,31 +491,33 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuCopy, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor)
             }, action: { _, f in
-                let copyTextWithEntities = {
-                    var messageEntities: [MessageTextEntity]?
-                    var restrictedText: String?
-                    for attribute in message.attributes {
-                        if let attribute = attribute as? TextEntitiesMessageAttribute {
-                            messageEntities = attribute.entities
-                        }
-                        if let attribute = attribute as? RestrictedContentMessageAttribute {
-                            restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) ?? ""
-                        }
+                var messageEntities: [MessageTextEntity]?
+                var restrictedText: String?
+                for attribute in message.attributes {
+                    if let attribute = attribute as? TextEntitiesMessageAttribute {
+                        messageEntities = attribute.entities
                     }
+                    if let attribute = attribute as? RestrictedContentMessageAttribute {
+                        restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) ?? ""
+                    }
+                }
 
-                    if let restrictedText = restrictedText {
-                        storeMessageTextInPasteboard(restrictedText, entities: nil)
+                if let restrictedText = restrictedText {
+                    storeMessageTextInPasteboard(restrictedText, entities: nil)
+                } else {
+                    if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled,
+                       let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translationState.toLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
+                        storeMessageTextInPasteboard(translation.text, entities: translation.entities)
                     } else {
                         storeMessageTextInPasteboard(message.text, entities: messageEntities)
                     }
-
-                    Queue.mainQueue().after(0.2, {
-                        let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
-                        controllerInteraction.displayUndo(content)
-                    })
                 }
 
-                copyTextWithEntities()
+                Queue.mainQueue().after(0.2, {
+                    let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
+                    controllerInteraction.displayUndo(content)
+                })
+                
                 f(.default)
             })))
         }
@@ -502,6 +574,12 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     let canSelect = !isAction
     
     let message = messages[0]
+    
+    if case .peer = chatPresentationInterfaceState.chatLocation, let channel = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramChannel, channel.flags.contains(.isForum) {
+        if message.threadId == nil {
+            canReply = false
+        }
+    }
     
     if Namespaces.Message.allScheduled.contains(message.id.namespace) || message.id.peerId.isReplies {
         canReply = false
@@ -584,9 +662,23 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         )
     }
 
-    let readCounters = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.PeerReadCounters(id: messages[0].id.peerId))
+    let readCounters: Signal<Bool, NoError>
+    if case let .replyThread(threadMessage) = chatPresentationInterfaceState.chatLocation, threadMessage.isForumPost {
+        readCounters = context.engine.data.get(TelegramEngine.EngineData.Item.Peer.ThreadData(id: threadMessage.messageId.peerId, threadId: Int64(threadMessage.messageId.id)))
+        |> map { threadData -> Bool in
+            guard let threadData else {
+                return false
+            }
+            return threadData.maxOutgoingReadId >= message.id.id
+        }
+    } else {
+        readCounters = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.PeerReadCounters(id: messages[0].id.peerId))
+        |> map { readCounters -> Bool in
+            return readCounters.isOutgoingMessageIndexRead(message.index)
+        }
+    }
     
-    let dataSignal: Signal<(MessageContextMenuData, [MessageId: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?), NoError> = combineLatest(
+    let dataSignal: Signal<(MessageContextMenuData, [MessageId: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?), NoError> = combineLatest(
         loadLimits,
         loadStickerSaveStatusSignal,
         loadResourceStatusSignal,
@@ -598,17 +690,16 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         ApplicationSpecificNotice.getMessageViewsPrivacyTips(accountManager: context.sharedContext.accountManager),
         context.engine.stickers.availableReactions(),
         context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings, SharedDataKeys.loggingSettings]),
-        context.engine.peers.notificationSoundList() |> take(1)
+        context.engine.peers.notificationSoundList() |> take(1),
+        context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
     )
-    |> map { limitsAndAppConfig, stickerSaveStatus, resourceStatus, messageActions, updatingMessageMedia, infoSummaryData, readCounters, messageViewsPrivacyTips, availableReactions, sharedData, notificationSoundList -> (MessageContextMenuData, [MessageId: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?) in
+    |> map { limitsAndAppConfig, stickerSaveStatus, resourceStatus, messageActions, updatingMessageMedia, infoSummaryData, isMessageRead, messageViewsPrivacyTips, availableReactions, sharedData, notificationSoundList, accountPeer -> (MessageContextMenuData, [MessageId: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?) in
         let (limitsConfiguration, appConfig) = limitsAndAppConfig
         var canEdit = false
         if !isAction {
             let message = messages[0]
             canEdit = canEditMessage(context: context, limitsConfiguration: limitsConfiguration, message: message)
         }
-
-        let isMessageRead = readCounters.isOutgoingMessageIndexRead(message.index)
         
         let translationSettings: TranslationSettings
         if let current = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) {
@@ -624,12 +715,14 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             loggingSettings = LoggingSettings.defaultSettings
         }
         
-        return (MessageContextMenuData(starStatus: stickerSaveStatus, canReply: canReply, canPin: canPin, canEdit: canEdit, canSelect: canSelect, resourceStatus: resourceStatus, messageActions: messageActions), updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList)
+        return (MessageContextMenuData(starStatus: stickerSaveStatus, canReply: canReply, canPin: canPin, canEdit: canEdit, canSelect: canSelect, resourceStatus: resourceStatus, messageActions: messageActions), updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer)
     }
     
     return dataSignal
     |> deliverOnMainQueue
-    |> map { data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList -> ContextController.Items in
+    |> map { data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer -> ContextController.Items in
+        let isPremium = accountPeer?.isPremium ?? false
+        
         var actions: [ContextMenuItem] = []
         
         var isPinnedMessages = false
@@ -682,8 +775,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             }, action: { _, f in
                                 f(.dismissWithoutContent)
                                 
-                                let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled]))
-                                controller.peerSelected = { [weak controller] peer in
+                                let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled], selectForumThreads: true))
+                                controller.peerSelected = { [weak controller] peer, _ in
                                     let peerId = peer.id
                                     
                                     if let strongController = controller {
@@ -691,7 +784,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                         
                                         let id = Int64.random(in: Int64.min ... Int64.max)
                                         let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: logPath, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: "CallStats.log")])
-                                        let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil)
+                                        let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
                                         
                                         let _ = enqueueMessages(account: context.account, peerId: peerId, messages: [message]).start()
                                     }
@@ -734,7 +827,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 let _ = context.engine.messages.rateAudioTranscription(messageId: message.id, id: audioTranscription.id, isGood: value).start()
                 
                 let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                let content: UndoOverlayContent = .info(title: nil, text: presentationData.strings.Chat_AudioTranscriptionFeedbackTip)
+                let content: UndoOverlayContent = .info(title: nil, text: presentationData.strings.Chat_AudioTranscriptionFeedbackTip, timeout: nil)
                 controllerInteraction.displayUndo(content)
             }), false), at: 0)
             actions.insert(.separator, at: 1)
@@ -761,12 +854,12 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             
                             let settings = NotificationSoundSettings.extract(from: context.currentAppConfiguration.with({ $0 }))
                             if size > settings.maxSize {
-                                controllerInteraction.displayUndo(.info(title: presentationData.strings.Notifications_UploadError_TooLarge_Title, text: presentationData.strings.Notifications_UploadError_TooLarge_Text(dataSizeString(Int64(settings.maxSize), formatting: DataSizeStringFormatting(presentationData: presentationData))).string))
+                                controllerInteraction.displayUndo(.info(title: presentationData.strings.Notifications_UploadError_TooLarge_Title, text: presentationData.strings.Notifications_UploadError_TooLarge_Text(dataSizeString(Int64(settings.maxSize), formatting: DataSizeStringFormatting(presentationData: presentationData))).string, timeout: nil))
                             } else if Double(duration) > Double(settings.maxDuration) {
-                                controllerInteraction.displayUndo(.info(title: presentationData.strings.Notifications_UploadError_TooLong_Title(fileName).string, text: presentationData.strings.Notifications_UploadError_TooLong_Text(stringForDuration(Int32(settings.maxDuration))).string))
+                                controllerInteraction.displayUndo(.info(title: presentationData.strings.Notifications_UploadError_TooLong_Title(fileName).string, text: presentationData.strings.Notifications_UploadError_TooLong_Text(stringForDuration(Int32(settings.maxDuration))).string, timeout: nil))
                             } else {
                                 let _ = (context.engine.peers.saveNotificationSound(file: .message(message: MessageReference(message), media: file))
-                                |> deliverOnMainQueue).start(completed: {
+                                         |> deliverOnMainQueue).start(completed: {
                                     controllerInteraction.displayUndo(.notificationSoundAdded(title: presentationData.strings.Notifications_UploadSuccess_Title, text: presentationData.strings.Notifications_SaveSuccess_Text, action: {
                                         controllerInteraction.navigationController()?.pushViewController(notificationsAndSoundsController(context: context, exceptionsList: nil))
                                     }))
@@ -794,7 +887,11 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                             continue
                                         }
                                         
-                                        subActions.append(.action(ContextMenuActionItem(text: reaction.value, icon: { _ in
+                                        guard case let .builtin(emojiValue) = reaction.value else {
+                                            continue
+                                        }
+                                        
+                                        subActions.append(.action(ContextMenuActionItem(text: emojiValue, icon: { _ in
                                             return nil
                                         }, action: { _, f in
                                             let _ = updateExperimentalUISettingsInteractively(accountManager: context.sharedContext.accountManager, { settings in
@@ -874,9 +971,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                                 currentItems = []
                                             }
                                             
-                                            currentItems.removeAll(where: { $0.key == stickerName })
+                                            currentItems.removeAll(where: { $0.key == MessageReaction.Reaction.builtin(stickerName) })
                                             currentItems.append(ExperimentalUISettings.AccountReactionOverrides.Item(
-                                                key: stickerName,
+                                                key: .builtin(stickerName),
                                                 messageId: message.id,
                                                 mediaId: file.fileId
                                             ))
@@ -902,6 +999,53 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         break
                     }
                 }
+            }
+        }
+        
+        var isDownloading = false
+        let resourceAvailable: Bool
+        if let resourceStatus = data.resourceStatus {
+            if case .Local = resourceStatus {
+                resourceAvailable = true
+            } else {
+                resourceAvailable = false
+            }
+            if case .Fetching = resourceStatus {
+                isDownloading = true
+            }
+        } else {
+            resourceAvailable = false
+        }
+        
+
+        if !isPremium && isDownloading {
+            var isLargeFile = false
+            for media in message.media {
+                if let file = media as? TelegramMediaFile {
+                    if let size = file.size, size >= 150 * 1024 * 1024 {
+                        isLargeFile = true
+                    }
+                    break
+                }
+            }
+            if isLargeFile {
+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_IncreaseSpeed, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Speed"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let context = context
+                    var replaceImpl: ((ViewController) -> Void)?
+                    let controller = PremiumDemoScreen(context: context, subject: .fasterDownload, action: {
+                        let controller = PremiumIntroScreen(context: context, source: .fasterDownload)
+                        replaceImpl?(controller)
+                    })
+                    replaceImpl = { [weak controller] c in
+                        controller?.replace(with: c)
+                    }
+                    controllerInteraction.navigationController()?.pushViewController(controller)
+                    
+                    f(.dismissWithoutContent)
+                })))
+                actions.append(.separator)
             }
         }
         
@@ -938,12 +1082,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
         
-        let resourceAvailable: Bool
-        if let resourceStatus = data.resourceStatus, case .Local = resourceStatus {
-            resourceAvailable = true
-        } else {
-            resourceAvailable = false
-        }
+
         
         var messageText: String = ""
         for message in messages {
@@ -982,49 +1121,61 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if (!messageText.isEmpty || resourceAvailable || diceEmoji != nil) && !chatPresentationInterfaceState.copyProtectionEnabled && !message.isCopyProtected() {
-            let message = messages[0]
-            var isExpired = false
-            for media in message.media {
-                if let _ = media as? TelegramMediaExpiredContent {
-                    isExpired = true
-                }
+        let message = messages[0]
+        var isExpired = false
+        var isImage = false
+        for media in message.media {
+            if let _ = media as? TelegramMediaExpiredContent {
+                isExpired = true
             }
+            if media is TelegramMediaImage {
+                isImage = true
+            }
+        }
+        
+        let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+        if !messageText.isEmpty || (resourceAvailable && isImage) || diceEmoji != nil {
             if !isExpired {
                 if !isPoll {
-                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuCopy, icon: { theme in
-                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor)
-                    }, action: { _, f in
-                        if let diceEmoji = diceEmoji {
-                            UIPasteboard.general.string = diceEmoji
-                        } else {
-                            let copyTextWithEntities = {
-                                var messageEntities: [MessageTextEntity]?
-                                var restrictedText: String?
-                                for attribute in message.attributes {
-                                    if let attribute = attribute as? TextEntitiesMessageAttribute {
-                                        messageEntities = attribute.entities
+                    if !isCopyProtected {
+                        actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuCopy, icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor)
+                        }, action: { _, f in
+                            if let diceEmoji = diceEmoji {
+                                UIPasteboard.general.string = diceEmoji
+                            } else {
+                                let copyTextWithEntities = {
+                                    var messageEntities: [MessageTextEntity]?
+                                    var restrictedText: String?
+                                    for attribute in message.attributes {
+                                        if let attribute = attribute as? TextEntitiesMessageAttribute {
+                                            messageEntities = attribute.entities
+                                        }
+                                        if let attribute = attribute as? RestrictedContentMessageAttribute {
+                                            restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) ?? ""
+                                        }
                                     }
-                                    if let attribute = attribute as? RestrictedContentMessageAttribute {
-                                        restrictedText = attribute.platformText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) ?? ""
+                                    
+                                    if let restrictedText = restrictedText {
+                                        storeMessageTextInPasteboard(restrictedText, entities: nil)
+                                    } else {
+                                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled,
+                                           let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translationState.toLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
+                                            storeMessageTextInPasteboard(translation.text, entities: translation.entities)
+                                        } else {
+                                            storeMessageTextInPasteboard(messageText, entities: messageEntities)
+                                        }
                                     }
+                                    
+                                    Queue.mainQueue().after(0.2, {
+                                        let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
+                                        controllerInteraction.displayUndo(content)
+                                    })
                                 }
-                                
-                                if let restrictedText = restrictedText {
-                                    storeMessageTextInPasteboard(restrictedText, entities: nil)
-                                } else {
-                                    storeMessageTextInPasteboard(messageText, entities: messageEntities)
-                                }
-                                
-                                Queue.mainQueue().after(0.2, {
-                                    let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
-                                    controllerInteraction.displayUndo(content)
-                                })
-                            }
-                            if resourceAvailable {
-                                for media in message.media {
-                                    if let image = media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations) {
-                                        let _ = (context.account.postbox.mediaBox.resourceData(largest.resource, option: .incremental(waitUntilFetchStatus: false))
+                                if resourceAvailable {
+                                    for media in message.media {
+                                        if let image = media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations) {
+                                            let _ = (context.account.postbox.mediaBox.resourceData(largest.resource, option: .incremental(waitUntilFetchStatus: false))
                                             |> take(1)
                                             |> deliverOnMainQueue).start(next: { data in
                                                 if data.complete, let imageData = try? Data(contentsOf: URL(fileURLWithPath: data.path)) {
@@ -1046,14 +1197,19 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                                     copyTextWithEntities()
                                                 }
                                             })
+                                            break
+                                        } else {
+                                            copyTextWithEntities()
+                                            break
+                                        }
                                     }
+                                } else {
+                                    copyTextWithEntities()
                                 }
-                            } else {
-                                copyTextWithEntities()
                             }
-                        }
-                        f(.default)
-                    })))
+                            f(.default)
+                        })))
+                    }
                 }
                 
                 var showTranslateIfTopical = false
@@ -1066,7 +1222,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuTranslate, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
-                        controllerInteraction.performTextSelectionAction(0, NSAttributedString(string: messageText), .translate)
+                        controllerInteraction.performTextSelectionAction(!isCopyProtected, NSAttributedString(string: messageText), .translate)
                         f(.default)
                     })))
                 }
@@ -1075,39 +1231,44 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSpeak, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Message"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
-                        controllerInteraction.performTextSelectionAction(0, NSAttributedString(string: messageText), .speak)
+                        var text = messageText
+                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled,
+                           let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translationState.toLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
+                            text = translation.text
+                        }
+                        controllerInteraction.performTextSelectionAction(!isCopyProtected, NSAttributedString(string: text), .speak)
                         f(.default)
                     })))
                 }
             }
-            
-            if resourceAvailable, !message.containsSecretMedia {
-                var mediaReference: AnyMediaReference?
-                var isVideo = false
-                for media in message.media {
-                    if let image = media as? TelegramMediaImage, let _ = largestImageRepresentation(image.representations) {
-                        mediaReference = ImageMediaReference.standalone(media: image).abstract
-                        break
-                    } else if let file = media as? TelegramMediaFile, file.isVideo {
-                        mediaReference = FileMediaReference.standalone(media: file).abstract
-                        isVideo = true
-                        break
-                    }
+        }
+        
+        if resourceAvailable, !message.containsSecretMedia && !isCopyProtected {
+            var mediaReference: AnyMediaReference?
+            var isVideo = false
+            for media in message.media {
+                if let image = media as? TelegramMediaImage, let _ = largestImageRepresentation(image.representations) {
+                    mediaReference = ImageMediaReference.standalone(media: image).abstract
+                    break
+                } else if let file = media as? TelegramMediaFile, file.isVideo {
+                    mediaReference = FileMediaReference.standalone(media: file).abstract
+                    isVideo = true
+                    break
                 }
-                if let mediaReference = mediaReference {
-                    actions.append(.action(ContextMenuActionItem(text: isVideo ? chatPresentationInterfaceState.strings.Gallery_SaveVideo : chatPresentationInterfaceState.strings.Gallery_SaveImage, icon: { theme in
-                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
-                    }, action: { _, f in
-                        let _ = (saveToCameraRoll(context: context, postbox: context.account.postbox, mediaReference: mediaReference)
-                        |> deliverOnMainQueue).start(completed: {
-                            Queue.mainQueue().after(0.2) {
-                                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                                controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: isVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return true }), nil)
-                            }
-                        })
-                        f(.default)
-                    })))
-                }
+            }
+            if let mediaReference = mediaReference {
+                actions.append(.action(ContextMenuActionItem(text: isVideo ? chatPresentationInterfaceState.strings.Gallery_SaveVideo : chatPresentationInterfaceState.strings.Gallery_SaveImage, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let _ = (saveToCameraRoll(context: context, postbox: context.account.postbox, userLocation: .peer(message.id.peerId), mediaReference: mediaReference)
+                    |> deliverOnMainQueue).start(completed: {
+                        Queue.mainQueue().after(0.2) {
+                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                            controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: isVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return true }), nil)
+                        }
+                    })
+                    f(.default)
+                })))
             }
         }
         
@@ -1220,7 +1381,17 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if data.canPin && !isMigrated, case .peer = chatPresentationInterfaceState.chatLocation {
+        var canPin = data.canPin
+        if case let .replyThread(message) = chatPresentationInterfaceState.chatLocation {
+            if !message.isForumPost {
+                canPin = false
+            }
+        }
+        if isMigrated {
+            canPin = false
+        }
+        
+        if canPin {
             var pinnedSelectedMessageId: MessageId?
             for message in messages {
                 if message.tags.contains(.pinned) {
@@ -1355,7 +1526,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             break
                         }
                     }
-                    if let file = media as? TelegramMediaFile, !chatPresentationInterfaceState.copyProtectionEnabled && !message.isCopyProtected() {
+                    if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
+                        
+                    } else if let file = media as? TelegramMediaFile, !isCopyProtected {
                         if file.isVideo {
                             if file.isAnimated && !file.isVideoSticker {
                                 actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveGif, icon: { theme in
@@ -1367,7 +1540,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                         Queue.mainQueue().after(0.2) {
                                             switch result {
                                                 case .generic:
-                                                    controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: presentationData.strings.Gallery_GifSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
+                                                    controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: presentationData.strings.Gallery_GifSaved, customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
                                                 case let .limitExceeded(limit, premiumLimit):
                                                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
                                                     let text: String
@@ -1376,7 +1549,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                                     } else {
                                                         text = presentationData.strings.Premium_MaxSavedGifsText("\(premiumLimit)").string
                                                     }
-                                                    controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: presentationData.strings.Premium_MaxSavedGifsTitle("\(limit)").string, text: text), elevatedLayout: false, animateInAsReplacement: false, action: { action in
+                                                    controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: presentationData.strings.Premium_MaxSavedGifsTitle("\(limit)").string, text: text, customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { action in
                                                         if case .info = action {
                                                             let controller = PremiumIntroScreen(context: context, source: .savedGifs)
                                                             controllerInteraction.navigationController()?.pushViewController(controller)
@@ -1406,11 +1579,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 f(.dismissWithoutContent)
             })))
         }
-                
+
         if data.messageActions.options.contains(.forward) {
-            if chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected() {
-                
-            } else {
+            if !isCopyProtected {
                 actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuForward, icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
                 }, action: { _, f in
@@ -1454,6 +1625,22 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
             
             clearCacheAsDelete = true
+        }
+        
+        if isReplyThreadHead {
+            actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ViewInChannel, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/GoToMessage"), color: theme.actionSheet.primaryTextColor)
+            }, action: { c, _ in
+                c.dismiss(completion: {
+                    guard let navigationController = controllerInteraction.navigationController() else {
+                        return
+                    }
+                    guard let peer = messages[0].peers[messages[0].id.peerId] else {
+                        return
+                    }
+                    context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(EnginePeer(peer)), subject: .message(id: .id(messages[0].id), highlight: true, timecode: nil), useExisting: true))
+                })
+            })))
         }
 
         if !isReplyThreadHead, (!data.messageActions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty || clearCacheAsDelete) {
@@ -1539,7 +1726,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         
         let canViewStats = canViewReadStats(message: message, participantCount: infoSummaryData.participantCount, isMessageRead: isMessageRead, appConfig: appConfig)
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(message: message).reactions {
+        for reaction in mergedMessageReactionsAndPeers(accountPeer: nil, message: message).reactions {
             reactionCount += Int(reaction.count)
         }
         if let reactionsAttribute = message.reactionsAttribute {
@@ -1566,29 +1753,83 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 reactionCount = 0
             }
             
-            var readStats = readStats
+            /*var readStats = readStats
             if !canViewStats {
-                readStats = MessageReadStats(peers: [])
-            }
+                readStats = MessageReadStats(reactionCount: 0, peers: [])
+            }*/
 
             if hasReadReports || reactionCount != 0 {
                 if !actions.isEmpty {
                     actions.insert(.separator, at: 0)
                 }
 
-                actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, stats: readStats, action: { c, f, stats in
-                    if reactionCount == 0, let stats = stats, stats.peers.count == 1 {
+                actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: hasReadReports, stats: readStats, action: { c, f, stats, customReactionEmojiPacks, firstCustomEmojiReaction in
+                    if reactionCount == 0, let stats = stats, stats.peers.count == 1, !"".isEmpty {
                         c.dismiss(completion: {
-                            controllerInteraction.openPeer(stats.peers[0].id, .default, nil, nil)
+                            controllerInteraction.openPeer(stats.peers[0], .default, nil, .default)
                         })
                     } else if (stats != nil && !stats!.peers.isEmpty) || reactionCount != 0 {
-                        c.pushItems(items: .single(ContextController.Items(content: .custom(ReactionListContextMenuContent(context: context, availableReactions: availableReactions, message: EngineMessage(message), reaction: nil, readStats: stats, back: { [weak c] in
-                            c?.popItems()
-                        }, openPeer: { [weak c] id in
-                            c?.dismiss(completion: {
-                                controllerInteraction.openPeer(id, .default, nil, nil)
-                            })
-                        })), tip: nil)))
+                        var tip: ContextController.Tip?
+                        
+                        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                        let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
+                        
+                        if !premiumConfiguration.isPremiumDisabled {
+                            if customReactionEmojiPacks.count == 1, let firstCustomEmojiReaction = firstCustomEmojiReaction {
+                                tip = .animatedEmoji(
+                                    text: presentationData.strings.ChatContextMenu_ReactionEmojiSetSingle(customReactionEmojiPacks[0].title).string,
+                                    arguments: TextNodeWithEntities.Arguments(
+                                        context: context,
+                                        cache: controllerInteraction.presentationContext.animationCache,
+                                        renderer: controllerInteraction.presentationContext.animationRenderer,
+                                        placeholderColor: .clear,
+                                        attemptSynchronous: true
+                                    ),
+                                    file: firstCustomEmojiReaction,
+                                    action: {
+                                        (interfaceInteraction.chatController() as? ChatControllerImpl)?.presentEmojiList(references: customReactionEmojiPacks.map { pack -> StickerPackReference in .id(id: pack.id.id, accessHash: pack.accessHash) })
+                                    }
+                                )
+                            } else if customReactionEmojiPacks.count > 1 {
+                                tip = .animatedEmoji(text: presentationData.strings.ChatContextMenu_ReactionEmojiSet(Int32(customReactionEmojiPacks.count)), arguments: nil, file: nil, action: {
+                                    (interfaceInteraction.chatController() as? ChatControllerImpl)?.presentEmojiList(references: customReactionEmojiPacks.map { pack -> StickerPackReference in .id(id: pack.id.id, accessHash: pack.accessHash) })
+                                })
+                            }
+                        }
+                        
+                        var displayReadTimestamps = false
+                        if let stats, !stats.readTimestamps.isEmpty {
+                            displayReadTimestamps = true
+                        }
+                        let tempState = EngineMessageReactionListContext.State(message: EngineMessage(message), readStats: stats, reaction: nil)
+                        var allItemsHaveTimestamp = true
+                        for item in tempState.items {
+                            if item.timestamp == nil {
+                                allItemsHaveTimestamp = false
+                            }
+                        }
+                        if allItemsHaveTimestamp {
+                            displayReadTimestamps = true
+                        }
+                        
+                        c.pushItems(items: .single(ContextController.Items(content: .custom(ReactionListContextMenuContent(
+                            context: context,
+                            displayReadTimestamps: displayReadTimestamps,
+                            availableReactions: availableReactions,
+                            animationCache: controllerInteraction.presentationContext.animationCache,
+                            animationRenderer: controllerInteraction.presentationContext.animationRenderer,
+                            message: EngineMessage(message),
+                            reaction: nil,
+                            readStats: stats,
+                            back: { [weak c] in
+                                c?.popItems()
+                            },
+                            openPeer: { [weak c] peer, hasReaction in
+                                c?.dismiss(completion: {
+                                    controllerInteraction.openPeer(peer, .default, MessageReference(message), hasReaction ? .reaction : .default)
+                                })
+                            }
+                        )), tip: tip)))
                     } else {
                         f(.default)
                     }
@@ -1658,6 +1899,7 @@ func chatAvailableMessageActionsImpl(engine: TelegramEngine, accountPeerId: Peer
         var hadBanPeerId = false
         var disableDelete = false
         var isCopyProtected = false
+        var isShareProtected = false
         
         func getPeer(_ peerId: PeerId) -> Peer? {
             if let maybePeer = peerMap[peerId], let peer = maybePeer {
@@ -1690,7 +1932,9 @@ func chatAvailableMessageActionsImpl(engine: TelegramEngine, accountPeerId: Peer
                     isCopyProtected = true
                 }
                 for media in message.media {
-                    if let file = media as? TelegramMediaFile, file.isSticker {
+                    if let invoice = media as? TelegramMediaInvoice, let _ = invoice.extendedMedia {
+                        isShareProtected = true
+                    } else if let file = media as? TelegramMediaFile, file.isSticker {
                         for case let .Sticker(_, packReference, _) in file.attributes {
                             if let _ = packReference {
                                 optionsMap[id]!.insert(.viewStickerPack)
@@ -1875,8 +2119,12 @@ func chatAvailableMessageActionsImpl(engine: TelegramEngine, accountPeerId: Peer
                     optionsMap[id]!.insert(.deleteLocally)
                 }
             }
+            
+            if !isShareProtected {
+                optionsMap[id]!.insert(.externalShare)
+            }
         }
-        
+                
         if !optionsMap.isEmpty {
             var reducedOptions = optionsMap.values.first!
             for value in optionsMap.values {
@@ -2120,12 +2368,14 @@ private final class ChatDeleteMessageContextItemNode: ASDisplayNode, ContextMenu
 final class ChatReadReportContextItem: ContextMenuCustomItem {
     fileprivate let context: AccountContext
     fileprivate let message: Message
+    fileprivate let hasReadReports: Bool
     fileprivate let stats: MessageReadStats?
-    fileprivate let action: (ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?) -> Void
+    fileprivate let action: (ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void
 
-    init(context: AccountContext, message: Message, stats: MessageReadStats?, action: @escaping (ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?) -> Void) {
+    init(context: AccountContext, message: Message, hasReadReports: Bool, stats: MessageReadStats?, action: @escaping (ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void) {
         self.context = context
         self.message = message
+        self.hasReadReports = hasReadReports
         self.stats = stats
         self.action = action
     }
@@ -2160,6 +2410,10 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
 
     private var disposable: Disposable?
     private var currentStats: MessageReadStats?
+    
+    private var customEmojiPacksDisposable: Disposable?
+    private var customEmojiPacks: [StickerPackCollectionInfo] = []
+    private var firstCustomEmojiReaction: TelegramMediaFile?
 
     init(presentationData: PresentationData, item: ChatReadReportContextItem, getController: @escaping () -> ContextControllerProtocol?, actionSelected: @escaping (ContextMenuActionResult) -> Void) {
         self.item = item
@@ -2235,8 +2489,62 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         self.buttonNode.addTarget(self, action: #selector(self.buttonPressed), forControlEvents: .touchUpInside)
         
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(message: self.item.message).reactions {
+        var customEmojiFiles = Set<Int64>()
+        for reaction in mergedMessageReactionsAndPeers(accountPeer: nil, message: self.item.message).reactions {
             reactionCount += Int(reaction.count)
+            
+            if case let .custom(fileId) = reaction.value {
+                customEmojiFiles.insert(fileId)
+            }
+        }
+        
+        if !customEmojiFiles.isEmpty {
+            self.customEmojiPacksDisposable = (item.context.engine.stickers.resolveInlineStickers(fileIds: Array(customEmojiFiles))
+            |> mapToSignal { customEmoji -> Signal<([StickerPackCollectionInfo], TelegramMediaFile?), NoError> in
+                var stickerPackSignals: [Signal<StickerPackCollectionInfo?, NoError>] = []
+                var existingIds = Set<Int64>()
+                var firstCustomEmojiReaction: TelegramMediaFile?
+                for (_, file) in customEmoji {
+                    loop: for attribute in file.attributes {
+                        if case let .CustomEmoji(_, _, _, packReference) = attribute, let packReference = packReference {
+                            if case let .id(id, _) = packReference, !existingIds.contains(id) {
+                                if firstCustomEmojiReaction == nil {
+                                    firstCustomEmojiReaction = file
+                                }
+                                
+                                existingIds.insert(id)
+                                stickerPackSignals.append(item.context.engine.stickers.loadedStickerPack(reference: packReference, forceActualized: false)
+                                |> filter { result in
+                                    if case .result = result {
+                                        return true
+                                    } else {
+                                        return false
+                                    }
+                                }
+                                |> map { result -> StickerPackCollectionInfo? in
+                                    if case let .result(info, _, _) = result {
+                                        return info
+                                    } else {
+                                        return nil
+                                    }
+                                })
+                            }
+                            break loop
+                        }
+                    }
+                }
+                return combineLatest(stickerPackSignals)
+                |> map { stickerPacks -> ([StickerPackCollectionInfo], TelegramMediaFile?) in
+                    return (stickerPacks.compactMap { $0 }, firstCustomEmojiReaction)
+                }
+            }
+            |> deliverOnMainQueue).start(next: { [weak self] customEmojiPacks, firstCustomEmojiReaction in
+                guard let strongSelf = self else {
+                    return
+                }
+                strongSelf.customEmojiPacks = customEmojiPacks
+                strongSelf.firstCustomEmojiReaction = firstCustomEmojiReaction
+            })
         }
 
         if let currentStats = self.currentStats {
@@ -2260,6 +2568,7 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
 
     deinit {
         self.disposable?.dispose()
+        self.customEmojiPacksDisposable?.dispose()
     }
 
     override func didLoad() {
@@ -2279,7 +2588,7 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
     private var validLayout: (calculatedWidth: CGFloat, size: CGSize)?
 
     func updateStats(stats: MessageReadStats, transition: ContainedViewLayoutTransition) {
-        self.buttonNode.isUserInteractionEnabled = !stats.peers.isEmpty
+        self.buttonNode.isUserInteractionEnabled = !stats.peers.isEmpty || stats.reactionCount != 0
 
         guard let (calculatedWidth, size) = self.validLayout else {
             return
@@ -2304,11 +2613,13 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         let textFont = Font.regular(self.presentationData.listsFontSize.baseDisplaySize)
         
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(message: self.item.message).reactions {
+        for reaction in mergedMessageReactionsAndPeers(accountPeer: nil, message: self.item.message).reactions {
             reactionCount += Int(reaction.count)
         }
 
         if let currentStats = self.currentStats {
+            reactionCount = currentStats.reactionCount
+            
             if currentStats.peers.isEmpty {
                 if reactionCount != 0 {
                     let text: String = self.presentationData.strings.Chat_ContextReactionCount(Int32(reactionCount))
@@ -2327,14 +2638,14 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
 
                     self.textNode.attributedText = NSAttributedString(string: text, font: textFont, textColor: self.presentationData.theme.contextMenu.secondaryColor)
                 }
-            } else if currentStats.peers.count == 1 {
+            }/* else if currentStats.peers.count == 1 {
                 if reactionCount != 0 {
                     let text: String = self.presentationData.strings.Chat_OutgoingContextReactionCount(Int32(reactionCount))
                     self.textNode.attributedText = NSAttributedString(string: text, font: textFont, textColor: self.presentationData.theme.contextMenu.primaryColor)
                 } else {
                     self.textNode.attributedText = NSAttributedString(string: currentStats.peers[0].displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder), font: textFont, textColor: self.presentationData.theme.contextMenu.primaryColor)
                 }
-            } else {
+            }*/ else {
                 if reactionCount != 0 {
                     let text: String
                     if reactionCount >= currentStats.peers.count {
@@ -2406,15 +2717,19 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
             if let recentPeers = self.item.message.reactionsAttribute?.recentPeers, !recentPeers.isEmpty {
                 for recentPeer in recentPeers {
                     if let peer = self.item.message.peers[recentPeer.peerId] {
-                        avatarsPeers.append(EnginePeer(peer))
-                        if avatarsPeers.count == 3 {
-                            break
+                        if !avatarsPeers.contains(where: { $0.id == peer.id }) {
+                            avatarsPeers.append(EnginePeer(peer))
+                            if avatarsPeers.count == 3 {
+                                break
+                            }
                         }
                     }
                 }
             } else if let peers = self.currentStats?.peers {
                 for i in 0 ..< min(3, peers.count) {
-                    avatarsPeers.append(peers[i])
+                    if !avatarsPeers.contains(where: { $0.id == peers[i].id }) {
+                        avatarsPeers.append(peers[i])
+                    }
                 }
             }
             avatarsContent = self.avatarsContext.update(peers: avatarsPeers, animated: false)
@@ -2473,12 +2788,12 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         }
         self.item.action(controller, { [weak self] result in
             self?.actionSelected(result)
-        }, self.currentStats)
+        }, self.currentStats, self.customEmojiPacks, self.firstCustomEmojiReaction)
     }
 
     var isActionEnabled: Bool {
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(message: self.item.message).reactions {
+        for reaction in mergedMessageReactionsAndPeers(accountPeer: nil, message: self.item.message).reactions {
             reactionCount += Int(reaction.count)
         }
         if reactionCount >= 0 {

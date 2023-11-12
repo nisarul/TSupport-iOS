@@ -1,0 +1,4 @@
+module LegacyReachability {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Reachability/LegacyReachability/PublicHeaders/LegacyReachability/LegacyReachability.h"
+    export *
+}

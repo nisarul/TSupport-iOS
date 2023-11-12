@@ -47,6 +47,13 @@ private func cancelOtherGestures(gesture: ContextGesture, view: UIView) {
                 recognizer.cancel()
             } else if let recognizer = recognizer as? ListViewTapGestureRecognizer {
                 recognizer.cancel()
+            } else if let recognizer = recognizer as? UITapGestureRecognizer {
+                switch recognizer.state {
+                case .possible:
+                    recognizer.state = .failed
+                default:
+                    break
+                }
             }
         }
     }
@@ -57,6 +64,7 @@ private func cancelOtherGestures(gesture: ContextGesture, view: UIView) {
 
 public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDelegate {
     public var beginDelay: Double = 0.12
+    public var activateOnTap: Bool = false
     private var currentProgress: CGFloat = 0.0
     private var delayTimer: Timer?
     private var animator: DisplayLinkAnimator?
@@ -68,7 +76,7 @@ public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDeleg
     public var activated: ((ContextGesture, CGPoint) -> Void)?
     public var externalUpdated: ((UIView?, CGPoint) -> Void)?
     public var externalEnded: (((UIView?, CGPoint)?) -> Void)?
-    public var activatedAfterCompletion: (() -> Void)?
+    public var activatedAfterCompletion: ((CGPoint, Bool) -> Void)?
     public var cancelGesturesOnActivation: (() -> Void)?
     
     override public init(target: Any?, action: Selector?) {
@@ -208,7 +216,12 @@ public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDeleg
                 self.currentProgress = 0.0
                 self.activationProgress?(0.0, .ended(self.currentProgress))
                 if self.wasActivated {
-                    self.activatedAfterCompletion?()
+                    self.activatedAfterCompletion?(touch.location(in: self.view), false)
+                }
+            } else {
+                self.currentProgress = 0.0
+                if !self.wasActivated && self.activateOnTap {
+                    self.activatedAfterCompletion?(touch.location(in: self.view), true)
                 }
             }
             

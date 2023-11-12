@@ -1,0 +1,4 @@
+module EncryptionProvider {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/EncryptionProvider/PublicHeaders/EncryptionProvider/EncryptionProvider.h"
+    export *
+}

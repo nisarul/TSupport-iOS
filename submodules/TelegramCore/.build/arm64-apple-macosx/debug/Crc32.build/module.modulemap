@@ -1,0 +1,4 @@
+module Crc32 {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Crc32/PublicHeaders/Crc32/Crc32.h"
+    export *
+}

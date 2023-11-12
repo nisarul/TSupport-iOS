@@ -38,7 +38,7 @@ private func transcribeAudio(path: String, locale: String) -> Signal<Transcripti
                                 
                                 return
                             }
-                            speechRecognizerValue.defaultTaskHint = .unspecified
+                            speechRecognizerValue.defaultTaskHint = .dictation
                             sharedRecognizers[locale] = speechRecognizerValue
                             speechRecognizer = speechRecognizerValue
                             
@@ -47,14 +47,18 @@ private func transcribeAudio(path: String, locale: String) -> Signal<Transcripti
                             } else {
                                 speechRecognizer.supportsOnDeviceRecognition = false
                             }
+                            speechRecognizer.supportsOnDeviceRecognition = true
                         }
                         
                         let tempFilePath = NSTemporaryDirectory() + "/\(UInt64.random(in: 0 ... UInt64.max)).m4a"
                         let _ = try? FileManager.default.copyItem(atPath: path, toPath: tempFilePath)
                         
                         let request = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: tempFilePath))
+                        if #available(iOS 16.0, *) {
+                            request.addsPunctuation = true
+                        }
                         request.requiresOnDeviceRecognition = speechRecognizer.supportsOnDeviceRecognition
-                        request.shouldReportPartialResults = true
+                        request.shouldReportPartialResults = false
                         
                         let task = speechRecognizer.recognitionTask(with: request, resultHandler: { result, error in
                             if let result = result {

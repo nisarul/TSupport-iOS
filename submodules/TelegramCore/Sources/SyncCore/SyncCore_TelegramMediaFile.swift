@@ -20,6 +20,9 @@ public enum StickerPackReference: PostboxCoding, Hashable, Equatable, Codable {
     case dice(String)
     case animatedEmojiAnimations
     case premiumGifts
+    case emojiGenericAnimations
+    case iconStatusEmoji
+    case iconTopicEmoji
     
     public init(decoder: PostboxDecoder) {
         switch decoder.decodeInt32ForKey("r", orElse: 0) {
@@ -66,22 +69,24 @@ public enum StickerPackReference: PostboxCoding, Hashable, Equatable, Codable {
     
     public func encode(_ encoder: PostboxEncoder) {
         switch self {
-            case let .id(id, accessHash):
-                encoder.encodeInt32(0, forKey: "r")
-                encoder.encodeInt64(id, forKey: "i")
-                encoder.encodeInt64(accessHash, forKey: "h")
-            case let .name(name):
-                encoder.encodeInt32(1, forKey: "r")
-                encoder.encodeString(name, forKey: "n")
-            case .animatedEmoji:
-                encoder.encodeInt32(2, forKey: "r")
-            case let .dice(emoji):
-                encoder.encodeInt32(3, forKey: "r")
-                encoder.encodeString(emoji, forKey: "e")
-            case .animatedEmojiAnimations:
-                encoder.encodeInt32(4, forKey: "r")
-            case .premiumGifts:
-                encoder.encodeInt32(5, forKey: "r")
+        case let .id(id, accessHash):
+            encoder.encodeInt32(0, forKey: "r")
+            encoder.encodeInt64(id, forKey: "i")
+            encoder.encodeInt64(accessHash, forKey: "h")
+        case let .name(name):
+            encoder.encodeInt32(1, forKey: "r")
+            encoder.encodeString(name, forKey: "n")
+        case .animatedEmoji:
+            encoder.encodeInt32(2, forKey: "r")
+        case let .dice(emoji):
+            encoder.encodeInt32(3, forKey: "r")
+            encoder.encodeString(emoji, forKey: "e")
+        case .animatedEmojiAnimations:
+            encoder.encodeInt32(4, forKey: "r")
+        case .premiumGifts:
+            encoder.encodeInt32(5, forKey: "r")
+        case .emojiGenericAnimations, .iconStatusEmoji, .iconTopicEmoji:
+            preconditionFailure()
         }
     }
     
@@ -105,47 +110,67 @@ public enum StickerPackReference: PostboxCoding, Hashable, Equatable, Codable {
             try container.encode(4 as Int32, forKey: "r")
         case .premiumGifts:
             try container.encode(5 as Int32, forKey: "r")
+        case .emojiGenericAnimations, .iconStatusEmoji, .iconTopicEmoji:
+            preconditionFailure()
         }
     }
     
     public static func ==(lhs: StickerPackReference, rhs: StickerPackReference) -> Bool {
         switch lhs {
-            case let .id(id, accessHash):
-                if case .id(id, accessHash) = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case let .name(name):
-                if case .name(name) = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .animatedEmoji:
-                if case .animatedEmoji = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case let .dice(emoji):
-                if case .dice(emoji) = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .animatedEmojiAnimations:
-                if case .animatedEmojiAnimations = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .premiumGifts:
-                if case .premiumGifts = rhs {
-                    return true
-                } else {
-                    return false
-                }
+        case let .id(id, accessHash):
+            if case .id(id, accessHash) = rhs {
+                return true
+            } else {
+                return false
+            }
+        case let .name(name):
+            if case .name(name) = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .animatedEmoji:
+            if case .animatedEmoji = rhs {
+                return true
+            } else {
+                return false
+            }
+        case let .dice(emoji):
+            if case .dice(emoji) = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .animatedEmojiAnimations:
+            if case .animatedEmojiAnimations = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .premiumGifts:
+            if case .premiumGifts = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .emojiGenericAnimations:
+            if case .emojiGenericAnimations = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .iconStatusEmoji:
+            if case .iconStatusEmoji = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .iconTopicEmoji:
+            if case .iconTopicEmoji = rhs {
+                return true
+            } else {
+                return false
+            }
         }
     }
 }
@@ -165,7 +190,7 @@ public struct TelegramMediaVideoFlags: OptionSet {
     public static let supportsStreaming = TelegramMediaVideoFlags(rawValue: 1 << 1)
 }
 
-public struct StickerMaskCoords: PostboxCoding {
+public struct StickerMaskCoords: PostboxCoding, Equatable {
     public let n: Int32
     public let x: Double
     public let y: Double
@@ -193,7 +218,7 @@ public struct StickerMaskCoords: PostboxCoding {
     }
 }
 
-public enum TelegramMediaFileAttribute: PostboxCoding {
+public enum TelegramMediaFileAttribute: PostboxCoding, Equatable {
     case FileName(fileName: String)
     case Sticker(displayText: String, packReference: StickerPackReference?, maskData: StickerMaskCoords?)
     case ImageSize(size: PixelDimensions)
@@ -204,7 +229,7 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
     case hintFileIsLarge
     case hintIsValidated
     case NoPremium
-    case CustomEmoji(isPremium: Bool, alt: String, packReference: StickerPackReference?)
+    case CustomEmoji(isPremium: Bool, isSingleColor: Bool, alt: String, packReference: StickerPackReference?)
     
     public init(decoder: PostboxDecoder) {
         let type: Int32 = decoder.decodeInt32ForKey("t", orElse: 0)
@@ -235,7 +260,7 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
             case typeNoPremium:
                 self = .NoPremium
             case typeCustomEmoji:
-                self = .CustomEmoji(isPremium: decoder.decodeBoolForKey("ip", orElse: true), alt: decoder.decodeStringForKey("dt", orElse: ""), packReference: decoder.decodeObjectForKey("pr", decoder: { StickerPackReference(decoder: $0) }) as? StickerPackReference)
+                self = .CustomEmoji(isPremium: decoder.decodeBoolForKey("ip", orElse: true), isSingleColor: decoder.decodeBoolForKey("sc", orElse: false), alt: decoder.decodeStringForKey("dt", orElse: ""), packReference: decoder.decodeObjectForKey("pr", decoder: { StickerPackReference(decoder: $0) }) as? StickerPackReference)
             default:
                 preconditionFailure()
         }
@@ -292,9 +317,10 @@ public enum TelegramMediaFileAttribute: PostboxCoding {
                 encoder.encodeInt32(typeHintIsValidated, forKey: "t")
             case .NoPremium:
                 encoder.encodeInt32(typeNoPremium, forKey: "t")
-            case let .CustomEmoji(isPremium, alt, packReference):
+            case let .CustomEmoji(isPremium, isSingleColor, alt, packReference):
                 encoder.encodeInt32(typeCustomEmoji, forKey: "t")
                 encoder.encodeBool(isPremium, forKey: "ip")
+                encoder.encodeBool(isSingleColor, forKey: "sc")
                 encoder.encodeString(alt, forKey: "dt")
                 if let packReference = packReference {
                     encoder.encodeObject(packReference, forKey: "pr")
@@ -522,6 +548,15 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
         return false
     }
     
+    public var isStaticEmoji: Bool {
+        for attribute in self.attributes {
+            if case .CustomEmoji = attribute {
+                return self.mimeType == "image/webp"
+            }
+        }
+        return false
+    }
+    
     public var isVideo: Bool {
         for attribute in self.attributes {
             if case .Video = attribute {
@@ -598,6 +633,9 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
                 if case .Sticker = attribute {
                     hasSticker = true
                     break
+                } else if case .CustomEmoji = attribute {
+                    hasSticker = true
+                    break
                 }
             }
             return hasSticker
@@ -616,9 +654,29 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
         return hasSticker
     }
     
+    public var isCustomTemplateEmoji: Bool {
+        for attribute in self.attributes {
+            if case let .CustomEmoji(_, isSingleColor, _, packReference) = attribute, let packReference = packReference {
+                if isSingleColor {
+                    return true
+                }
+                switch packReference {
+                case let .id(id, _):
+                    if id == 1269403972611866647 {
+                        return true
+                    }
+                default:
+                    break
+                }
+                break
+            }
+        }
+        return false
+    }
+    
     public var isPremiumEmoji: Bool {
         for attribute in self.attributes {
-            if case let .CustomEmoji(isPremium, _, _) = attribute {
+            if case let .CustomEmoji(isPremium, _, _, _) = attribute {
                 return isPremium
             }
         }
@@ -649,12 +707,16 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
     }
     
     public var isMusic: Bool {
+        var hasNonVoiceAudio = false
+        var hasVideo = false
         for attribute in self.attributes {
             if case .Audio(false, _, _, _, _) = attribute {
-                return true
+                hasNonVoiceAudio = true
+            } else if case .Video = attribute {
+                hasVideo = true
             }
         }
-        return false
+        return hasNonVoiceAudio && !hasVideo
     }
     
     public var isVoice: Bool {
@@ -696,6 +758,10 @@ public final class TelegramMediaFile: Media, Equatable, Codable {
         }
         
         if self.mimeType != other.mimeType {
+            return false
+        }
+        
+        if self.attributes != other.attributes {
             return false
         }
         

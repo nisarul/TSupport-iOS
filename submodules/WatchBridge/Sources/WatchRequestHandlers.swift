@@ -60,7 +60,7 @@ final class WatchChatListHandler: WatchRequestHandler {
                             users = users.merging(chatUsers, uniquingKeysWith: { (_, last) in last })
                         }
                     }
-                    subscriber.putNext([ TGBridgeChatsArrayKey: chats, TGBridgeUsersDictionaryKey: users ])
+                    subscriber.putNext([ TGBridgeChatsArrayKey: chats, TGBridgeUsersDictionaryKey: users ] as [String: Any])
                 })
                 
                 return SBlockDisposable {
@@ -91,7 +91,7 @@ final class WatchChatMessagesHandler: WatchRequestHandler {
                 |> take(1)
                 |> mapToSignal({ context -> Signal<(MessageHistoryView, Bool, PresentationData), NoError> in
                     if let context = context {
-                        return context.account.viewTracker.aroundMessageHistoryViewForLocation(.peer(peerId: peerId), index: .upperBound, anchorIndex: .upperBound, count: limit, fixedCombinedReadStates: nil)
+                        return context.account.viewTracker.aroundMessageHistoryViewForLocation(.peer(peerId: peerId, threadId: nil), index: .upperBound, anchorIndex: .upperBound, count: limit, fixedCombinedReadStates: nil)
                         |> map { messageHistoryView, _, _ -> (MessageHistoryView, Bool, PresentationData) in
                             return (messageHistoryView, peerId == context.account.peerId, context.sharedContext.currentPresentationData.with { $0 })
                         }
@@ -108,7 +108,7 @@ final class WatchChatMessagesHandler: WatchRequestHandler {
                             users = users.merging(messageUsers, uniquingKeysWith: { (_, last) in last })
                         }
                     }
-                    subscriber.putNext([ TGBridgeMessagesArrayKey: messages, TGBridgeUsersDictionaryKey: users ])
+                    subscriber.putNext([ TGBridgeMessagesArrayKey: messages, TGBridgeUsersDictionaryKey: users ] as [String: Any])
                 })
                 
                 return SBlockDisposable {
@@ -199,17 +199,17 @@ final class WatchSendMessageHandler: WatchRequestHandler {
                         if args.replyToMid != 0, let peerId = peerId {
                             replyMessageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: args.replyToMid)
                         }
-                        messageSignal = .single((.message(text: args.text, attributes: [], inlineStickers: [:], mediaReference: nil, replyToMessageId: replyMessageId, localGroupingKey: nil, correlationId: nil), peerId))
+                        messageSignal = .single((.message(text: args.text, attributes: [], inlineStickers: [:], mediaReference: nil, replyToMessageId: replyMessageId, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []), peerId))
                     } else if let args = subscription as? TGBridgeSendLocationMessageSubscription, let location = args.location {
                         let peerId = makePeerIdFromBridgeIdentifier(args.peerId)
                         let map = TelegramMediaMap(latitude: location.latitude, longitude: location.longitude, heading: nil, accuracyRadius: nil, geoPlace: nil, venue: makeVenue(from: location.venue), liveBroadcastingTimeout: nil, liveProximityNotificationRadius: nil)
-                        messageSignal = .single((.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: map), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil), peerId))
+                        messageSignal = .single((.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: map), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []), peerId))
                     } else if let args = subscription as? TGBridgeSendStickerMessageSubscription {
                         let peerId = makePeerIdFromBridgeIdentifier(args.peerId)
                         messageSignal = mediaForSticker(documentId: args.document.documentId, account: context.account)
                         |> map({ media -> (EnqueueMessage?, PeerId?) in
                             if let media = media {
-                                return (.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil), peerId)
+                                return (.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), replyToMessageId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []), peerId)
                             } else {
                                 return (nil, nil)
                             }
@@ -217,7 +217,7 @@ final class WatchSendMessageHandler: WatchRequestHandler {
                     } else if let args = subscription as? TGBridgeSendForwardedMessageSubscription {
                         let peerId = makePeerIdFromBridgeIdentifier(args.targetPeerId)
                         if let forwardPeerId = makePeerIdFromBridgeIdentifier(args.peerId) {
-                            messageSignal = .single((.forward(source: MessageId(peerId: forwardPeerId, namespace: Namespaces.Message.Cloud, id: args.messageId), grouping: .none, attributes: [], correlationId: nil), peerId))
+                            messageSignal = .single((.forward(source: MessageId(peerId: forwardPeerId, namespace: Namespaces.Message.Cloud, id: args.messageId), threadId: nil, grouping: .none, attributes: [], correlationId: nil), peerId))
                         }
                     }
                     
@@ -295,7 +295,7 @@ final class WatchPeerInfoHandler: WatchRequestHandler {
                 })
                 let disposable = signal.start(next: { view in
                     let (chat, users) = makeBridgeChat(peerViewMainPeer(view), view: view)
-                    subscriber.putNext([ TGBridgeChatKey: chat, TGBridgeUsersDictionaryKey: users ])
+                    subscriber.putNext([ TGBridgeChatKey: chat, TGBridgeUsersDictionaryKey: users ] as [String: Any])
                 })
             
                 return SBlockDisposable {
@@ -476,8 +476,8 @@ final class WatchMediaHandler: WatchRequestHandler {
                                     if let dimensions = media.dimensions {
                                         size = dimensions.cgSize
                                     }
-                                    self.disposable.add(freeMediaFileInteractiveFetched(account: context.account, fileReference: fileReference).start())
-                                    return chatMessageSticker(account: context.account, file: media, small: false, fetched: true, onlyFullSize: true)
+                                    self.disposable.add(freeMediaFileInteractiveFetched(account: context.account, userLocation: .other, fileReference: fileReference).start())
+                                    return chatMessageSticker(account: context.account, userLocation: .other, file: media, small: false, fetched: true, onlyFullSize: true)
                                 }
                                 return .complete()
                             }
@@ -520,14 +520,14 @@ final class WatchMediaHandler: WatchRequestHandler {
                                 var imageDimensions: CGSize?
                                 for media in message.media {
                                     if let image = media as? TelegramMediaImage, let resource = largestImageRepresentation(image.representations)?.resource {
-                                        self.disposable.add(messageMediaImageInteractiveFetched(context: context, message: message._asMessage(), image: image, resource: resource, storeToDownloadsPeerType: nil).start())
+                                        self.disposable.add(messageMediaImageInteractiveFetched(context: context, message: message._asMessage(), image: image, resource: resource, storeToDownloadsPeerId: nil).start())
                                         candidateMediaReference = .message(message: MessageReference(message._asMessage()), media: media)
                                         break
                                     } else if let _ = media as? TelegramMediaFile {
                                         candidateMediaReference = .message(message: MessageReference(message._asMessage()), media: media)
                                         break
                                     } else if let webPage = media as? TelegramMediaWebpage, case let .Loaded(content) = webPage.content, let image = content.image, let resource = largestImageRepresentation(image.representations)?.resource  {
-                                        self.disposable.add(messageMediaImageInteractiveFetched(context: context, message: message._asMessage(), image: image, resource: resource, storeToDownloadsPeerType: nil).start())
+                                        self.disposable.add(messageMediaImageInteractiveFetched(context: context, message: message._asMessage(), image: image, resource: resource, storeToDownloadsPeerId: nil).start())
                                         candidateMediaReference = .webPage(webPage: WebpageReference(webPage), media: image)
                                         break
                                     }
@@ -545,13 +545,13 @@ final class WatchMediaHandler: WatchRequestHandler {
                                 }
                                 if let updatedMediaReference = updatedMediaReference, imageDimensions != nil {
                                     if let imageReference = updatedMediaReference.concrete(TelegramMediaImage.self) {
-                                        imageSignal = chatMessagePhotoThumbnail(account: context.account, photoReference: imageReference, onlyFullSize: true)
+                                        imageSignal = chatMessagePhotoThumbnail(account: context.account, userLocation: .other, photoReference: imageReference, onlyFullSize: true)
                                     } else if let fileReference = updatedMediaReference.concrete(TelegramMediaFile.self) {
                                         if fileReference.media.isVideo {
-                                            imageSignal = chatMessageVideoThumbnail(account: context.account, fileReference: fileReference)
+                                            imageSignal = chatMessageVideoThumbnail(account: context.account, userLocation: .other, fileReference: fileReference)
                                             roundVideo = fileReference.media.isInstantVideo
                                         } else if let iconImageRepresentation = smallestImageRepresentation(fileReference.media.previewRepresentations) {
-                                            imageSignal = chatWebpageSnippetFile(account: context.account, mediaReference: fileReference.abstract, representation: iconImageRepresentation)
+                                            imageSignal = chatWebpageSnippetFile(account: context.account, userLocation: .other, mediaReference: fileReference.abstract, representation: iconImageRepresentation)
                                         }
                                     }
                                 }
@@ -720,7 +720,7 @@ final class WatchAudioHandler: WatchRequestHandler {
                         replyMessageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: replyToMid)
                     }
                     
-                    let _ = enqueueMessages(account: context.account, peerId: peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "audio/ogg", size: Int64(data.count), attributes: [.Audio(isVoice: true, duration: Int(duration), title: nil, performer: nil, waveform: nil)])), replyToMessageId: replyMessageId, localGroupingKey: nil, correlationId: nil)]).start()
+                    let _ = enqueueMessages(account: context.account, peerId: peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: randomId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "audio/ogg", size: Int64(data.count), attributes: [.Audio(isVoice: true, duration: Int(duration), title: nil, performer: nil, waveform: nil)])), replyToMessageId: replyMessageId, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                 }
             })
         } else {
@@ -833,7 +833,7 @@ final class WatchPeerSettingsHandler: WatchRequestHandler {
                         var signal: Signal<Void, NoError>?
                         
                         if let args = subscription as? TGBridgePeerUpdateNotificationSettingsSubscription, let peerId = makePeerIdFromBridgeIdentifier(args.peerId) {
-                            signal = context.engine.peers.togglePeerMuted(peerId: peerId)
+                            signal = context.engine.peers.togglePeerMuted(peerId: peerId, threadId: nil)
                         } else if let args = subscription as? TGBridgePeerUpdateBlockStatusSubscription, let peerId = makePeerIdFromBridgeIdentifier(args.peerId) {
                             signal = context.engine.privacy.requestUpdatePeerIsBlocked(peerId: peerId, isBlocked: args.blocked)
                         }

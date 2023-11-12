@@ -15,6 +15,7 @@ import ContextUI
 import ChatPresentationInterfaceState
 import PremiumUI
 import UndoUI
+import ChatControllerInteraction
 
 final class HorizontalStickersChatContextPanelInteraction {
     var previewedStickerItem: TelegramMediaFile?
@@ -69,11 +70,11 @@ private struct StickerEntry: Identifiable, Comparable {
         return lhs.index < rhs.index
     }
     
-    func item(account: Account, stickersInteraction: HorizontalStickersChatContextPanelInteraction, interfaceInteraction: ChatPanelInterfaceInteraction, theme: PresentationTheme) -> GridItem {
-        return HorizontalStickerGridItem(account: account, file: self.file, theme: theme, isPreviewed: { item in
+    func item(context: AccountContext, stickersInteraction: HorizontalStickersChatContextPanelInteraction, interfaceInteraction: ChatPanelInterfaceInteraction, theme: PresentationTheme) -> GridItem {
+        return HorizontalStickerGridItem(context: context, file: self.file, theme: theme, isPreviewed: { item in
             return false//stickersInteraction.previewedStickerItem == item
         }, sendSticker: { file, node, rect in
-            let _ = interfaceInteraction.sendSticker(file, true, node, rect, nil)
+            let _ = interfaceInteraction.sendSticker(file, true, node, rect, nil, [])
         })
     }
 }
@@ -87,15 +88,15 @@ private struct StickerEntryTransition {
     let scrollToItem: GridNodeScrollToItem?
 }
 
-private func preparedGridEntryTransition(account: Account, from fromEntries: [StickerEntry], to toEntries: [StickerEntry], stickersInteraction: HorizontalStickersChatContextPanelInteraction, interfaceInteraction: ChatPanelInterfaceInteraction, theme: PresentationTheme) -> StickerEntryTransition {
+private func preparedGridEntryTransition(context: AccountContext, from fromEntries: [StickerEntry], to toEntries: [StickerEntry], stickersInteraction: HorizontalStickersChatContextPanelInteraction, interfaceInteraction: ChatPanelInterfaceInteraction, theme: PresentationTheme) -> StickerEntryTransition {
     let stationaryItems: GridNodeStationaryItems = .none
     let scrollToItem: GridNodeScrollToItem? = nil
     
     let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: fromEntries, rightList: toEntries)
     
     let deletions = deleteIndices
-    let insertions = indicesAndItems.map { GridNodeInsertItem(index: $0.0, item: $0.1.item(account: account, stickersInteraction: stickersInteraction, interfaceInteraction: interfaceInteraction, theme: theme), previousIndex: $0.2) }
-    let updates = updateIndices.map { GridNodeUpdateItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(account: account, stickersInteraction: stickersInteraction, interfaceInteraction: interfaceInteraction, theme: theme)) }
+    let insertions = indicesAndItems.map { GridNodeInsertItem(index: $0.0, item: $0.1.item(context: context, stickersInteraction: stickersInteraction, interfaceInteraction: interfaceInteraction, theme: theme), previousIndex: $0.2) }
+    let updates = updateIndices.map { GridNodeUpdateItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(context: context, stickersInteraction: stickersInteraction, interfaceInteraction: interfaceInteraction, theme: theme)) }
     
     return StickerEntryTransition(deletions: deletions, insertions: insertions, updates: updates, updateFirstIndexInSectionOffset: nil, stationaryItems: stationaryItems, scrollToItem: scrollToItem)
 }
@@ -181,7 +182,7 @@ final class HorizontalStickersChatContextPanelNode: ChatInputContextPanelNode {
                                 .action(ContextMenuActionItem(text: strongSelf.strings.StickerPack_Send, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Resend"), color: theme.contextMenu.primaryColor) }, action: { _, f in
                                     f(.default)
                                 
-                                    let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, false, nil, true, itemNode.view, itemNode.bounds, nil)
+                                    let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, false, nil, true, itemNode.view, itemNode.bounds, nil, [])
                                 })),
                                 .action(ContextMenuActionItem(text: isStarred ? strongSelf.strings.Stickers_RemoveFromFavorites : strongSelf.strings.Stickers_AddToFavorites, icon: { theme in generateTintedImage(image: isStarred ? UIImage(bundleImageName: "Chat/Context Menu/Unfave") : UIImage(bundleImageName: "Chat/Context Menu/Fave"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in
                                     f(.default)
@@ -225,7 +226,7 @@ final class HorizontalStickersChatContextPanelNode: ChatInputContextPanelNode {
                                                 if let packReference = packReference {
                                                     let controller = StickerPackScreen(context: strongSelf.context, mainStickerPack: packReference, stickerPacks: [packReference], parentNavigationController: controllerInteraction.navigationController(), sendSticker: { file, sourceNode, sourceRect in
                                                         if let strongSelf = self, let controllerInteraction = strongSelf.controllerInteraction {
-                                                            return controllerInteraction.sendSticker(file, false, false, nil, true, sourceNode, sourceRect, nil)
+                                                            return controllerInteraction.sendSticker(file, false, false, nil, true, sourceNode, sourceRect, nil, [])
                                                         } else {
                                                             return false
                                                         }
@@ -242,7 +243,7 @@ final class HorizontalStickersChatContextPanelNode: ChatInputContextPanelNode {
                                     }
                                 }))
                             ]
-                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(account: strongSelf.context.account, theme: strongSelf.theme, strings: strongSelf.strings, item: .pack(item.file), menu: menuItems, openPremiumIntro: { [weak self] in
+                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(context: strongSelf.context, theme: strongSelf.theme, strings: strongSelf.strings, item: .pack(item.file), menu: menuItems, openPremiumIntro: { [weak self] in
                                 guard let strongSelf = self else {
                                     return
                                 }
@@ -289,7 +290,7 @@ final class HorizontalStickersChatContextPanelNode: ChatInputContextPanelNode {
             self.updateLayout(size: validLayout.0, leftInset: validLayout.1, rightInset: validLayout.2, bottomInset: validLayout.3, transition: .immediate, interfaceState: validLayout.4)
         }
         
-        let transition = preparedGridEntryTransition(account: self.context.account, from: previousEntries, to: entries, stickersInteraction: self.stickersInteraction, interfaceInteraction: self.interfaceInteraction!, theme: self.theme)
+        let transition = preparedGridEntryTransition(context: self.context, from: previousEntries, to: entries, stickersInteraction: self.stickersInteraction, interfaceInteraction: self.interfaceInteraction!, theme: self.theme)
         self.enqueueTransition(transition)
     }
     

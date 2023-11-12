@@ -1,0 +1,4 @@
+module Reachability {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/Reachability.build/Reachability-Swift.h"
+    requires objc
+}

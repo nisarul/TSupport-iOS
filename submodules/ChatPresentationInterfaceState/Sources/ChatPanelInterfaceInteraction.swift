@@ -54,6 +54,18 @@ public enum ChatPanelRestrictionInfoDisplayType {
     case alert
 }
 
+public enum ChatTranslationDisplayType {
+    case original
+    case translated
+}
+
+public enum ChatOpenWebViewSource: Equatable {
+    case generic
+    case menu
+    case inline(bot: EnginePeer)
+    case webApp(botApp: BotApp)
+}
+
 public final class ChatPanelInterfaceInteraction {
     public let setupReplyMessage: (MessageId?, @escaping (ContainedViewLayoutTransition) -> Void) -> Void
     public let setupEditMessage: (MessageId?, @escaping (ContainedViewLayoutTransition) -> Void) -> Void
@@ -99,7 +111,7 @@ public final class ChatPanelInterfaceInteraction {
     public let displayVideoUnmuteTip: (CGPoint?) -> Void
     public let switchMediaRecordingMode: () -> Void
     public let setupMessageAutoremoveTimeout: () -> Void
-    public let sendSticker: (FileMediaReference, Bool, UIView, CGRect, CALayer?) -> Bool
+    public let sendSticker: (FileMediaReference, Bool, UIView, CGRect, CALayer?, [ItemCollectionId]) -> Bool
     public let unblockPeer: () -> Void
     public let pinMessage: (MessageId, ContextControllerProtocol?) -> Void
     public let unpinMessage: (MessageId, Bool, ContextControllerProtocol?) -> Void
@@ -113,6 +125,7 @@ public final class ChatPanelInterfaceInteraction {
     public let beginCall: (Bool) -> Void
     public let toggleMessageStickerStarred: (MessageId) -> Void
     public let presentController: (ViewController, Any?) -> Void
+    public let presentControllerInCurrent: (ViewController, Any?) -> Void
     public let getNavigationController: () -> NavigationController?
     public let presentGlobalOverlayController: (ViewController, Any?) -> Void
     public let navigateFeed: () -> Void
@@ -143,10 +156,17 @@ public final class ChatPanelInterfaceInteraction {
     public let openSendAsPeer: (ASDisplayNode, ContextGesture?) -> Void
     public let presentChatRequestAdminInfo: () -> Void
     public let displayCopyProtectionTip: (ASDisplayNode, Bool) -> Void
-    public let openWebView: (String, String, Bool, Bool) -> Void
+    public let openWebView: (String, String, Bool, ChatOpenWebViewSource) -> Void
     public let updateShowWebView: ((Bool) -> Bool) -> Void
     public let insertText: (NSAttributedString) -> Void
     public let backwardsDeleteText: () -> Void
+    public let restartTopic: () -> Void
+    public let toggleTranslation: (ChatTranslationDisplayType) -> Void
+    public let changeTranslationLanguage: (String) -> Void
+    public let addDoNotTranslateLanguage: (String) -> Void
+    public let hideTranslationPanel: () -> Void
+    public let openPremiumGift: () -> Void
+    public let requestLayout: (ContainedViewLayoutTransition) -> Void
     public let chatController: () -> ViewController?
     public let statuses: ChatPanelInterfaceInteractionStatuses?
     
@@ -195,7 +215,7 @@ public final class ChatPanelInterfaceInteraction {
         displayVideoUnmuteTip: @escaping (CGPoint?) -> Void,
         switchMediaRecordingMode: @escaping () -> Void,
         setupMessageAutoremoveTimeout: @escaping () -> Void,
-        sendSticker: @escaping (FileMediaReference, Bool, UIView, CGRect, CALayer?) -> Bool,
+        sendSticker: @escaping (FileMediaReference, Bool, UIView, CGRect, CALayer?, [ItemCollectionId]) -> Bool,
         unblockPeer: @escaping () -> Void,
         pinMessage: @escaping (MessageId, ContextControllerProtocol?) -> Void,
         unpinMessage: @escaping (MessageId, Bool, ContextControllerProtocol?) -> Void,
@@ -209,6 +229,7 @@ public final class ChatPanelInterfaceInteraction {
         beginCall: @escaping (Bool) -> Void,
         toggleMessageStickerStarred: @escaping (MessageId) -> Void,
         presentController: @escaping (ViewController, Any?) -> Void,
+        presentControllerInCurrent: @escaping (ViewController, Any?) -> Void,
         getNavigationController: @escaping () -> NavigationController?,
         presentGlobalOverlayController: @escaping (ViewController, Any?) -> Void,
         navigateFeed: @escaping () -> Void,
@@ -239,10 +260,17 @@ public final class ChatPanelInterfaceInteraction {
         openSendAsPeer: @escaping (ASDisplayNode, ContextGesture?) -> Void,
         presentChatRequestAdminInfo: @escaping () -> Void,
         displayCopyProtectionTip: @escaping (ASDisplayNode, Bool) -> Void,
-        openWebView: @escaping (String, String, Bool, Bool) -> Void,
+        openWebView: @escaping (String, String, Bool, ChatOpenWebViewSource) -> Void,
         updateShowWebView: @escaping ((Bool) -> Bool) -> Void,
         insertText: @escaping (NSAttributedString) -> Void,
         backwardsDeleteText: @escaping () -> Void,
+        restartTopic: @escaping () -> Void,
+        toggleTranslation:  @escaping (ChatTranslationDisplayType) -> Void,
+        changeTranslationLanguage: @escaping (String) -> Void,
+        addDoNotTranslateLanguage:  @escaping (String) -> Void,
+        hideTranslationPanel:  @escaping () -> Void,
+        openPremiumGift: @escaping () -> Void,
+        requestLayout: @escaping (ContainedViewLayoutTransition) -> Void,
         chatController: @escaping () -> ViewController?,
         statuses: ChatPanelInterfaceInteractionStatuses?
     ) {
@@ -304,6 +332,7 @@ public final class ChatPanelInterfaceInteraction {
         self.beginCall = beginCall
         self.toggleMessageStickerStarred = toggleMessageStickerStarred
         self.presentController = presentController
+        self.presentControllerInCurrent = presentControllerInCurrent
         self.getNavigationController = getNavigationController
         self.presentGlobalOverlayController = presentGlobalOverlayController
         self.navigateFeed = navigateFeed
@@ -338,6 +367,13 @@ public final class ChatPanelInterfaceInteraction {
         self.updateShowWebView = updateShowWebView
         self.insertText = insertText
         self.backwardsDeleteText = backwardsDeleteText
+        self.restartTopic = restartTopic
+        self.toggleTranslation = toggleTranslation
+        self.changeTranslationLanguage = changeTranslationLanguage
+        self.addDoNotTranslateLanguage = addDoNotTranslateLanguage
+        self.hideTranslationPanel = hideTranslationPanel
+        self.openPremiumGift = openPremiumGift
+        self.requestLayout = requestLayout
 
         self.chatController = chatController
         self.statuses = statuses
@@ -392,7 +428,7 @@ public final class ChatPanelInterfaceInteraction {
         }, displayVideoUnmuteTip: { _ in
         }, switchMediaRecordingMode: {
         }, setupMessageAutoremoveTimeout: {
-        }, sendSticker: { _, _, _, _, _ in
+        }, sendSticker: { _, _, _, _, _, _ in
             return false
         }, unblockPeer: {
         }, pinMessage: { _, _ in
@@ -407,6 +443,7 @@ public final class ChatPanelInterfaceInteraction {
         }, beginCall: { _ in
         }, toggleMessageStickerStarred: { _ in
         }, presentController: { _, _ in
+        }, presentControllerInCurrent: { _, _ in
         }, getNavigationController: {
             return nil
         }, presentGlobalOverlayController: { _, _ in
@@ -441,6 +478,13 @@ public final class ChatPanelInterfaceInteraction {
         }, updateShowWebView: { _ in
         }, insertText: { _ in
         }, backwardsDeleteText: {
+        }, restartTopic: {
+        }, toggleTranslation: { _ in
+        }, changeTranslationLanguage: { _ in
+        }, addDoNotTranslateLanguage: { _ in
+        }, hideTranslationPanel: {
+        }, openPremiumGift: {
+        }, requestLayout: { _ in
         }, chatController: {
             return nil
         }, statuses: nil)

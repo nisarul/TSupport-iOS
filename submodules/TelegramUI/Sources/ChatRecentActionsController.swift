@@ -105,7 +105,7 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, displayVideoUnmuteTip: { _ in
         }, switchMediaRecordingMode: {
         }, setupMessageAutoremoveTimeout: {
-        }, sendSticker: { _, _, _, _, _ in
+        }, sendSticker: { _, _, _, _, _, _ in
             return false
         }, unblockPeer: {
         }, pinMessage: { _, _ in
@@ -120,6 +120,7 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, beginCall: { _ in
         }, toggleMessageStickerStarred: { _ in
         }, presentController: { _, _ in
+        }, presentControllerInCurrent: { _, _ in
         }, getNavigationController: {
             return nil
         }, presentGlobalOverlayController: { _, _ in
@@ -155,6 +156,13 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, updateShowWebView: { _ in
         }, insertText: { _ in
         }, backwardsDeleteText: {
+        }, restartTopic: {
+        }, toggleTranslation: { _ in
+        }, changeTranslationLanguage: { _ in
+        }, addDoNotTranslateLanguage: { _ in
+        }, hideTranslationPanel: {
+        }, openPremiumGift: {
+        }, requestLayout: { _ in
         }, chatController: {
             return nil
         }, statuses: nil)

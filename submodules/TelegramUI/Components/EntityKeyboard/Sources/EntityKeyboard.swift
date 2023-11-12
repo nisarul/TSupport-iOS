@@ -6,7 +6,6 @@ import PagerComponent
 import TelegramPresentationData
 import TelegramCore
 import Postbox
-import BlurredBackgroundComponent
 import BundleIconComponent
 import AudioToolbox
 import SwiftSignalKit
@@ -15,15 +14,18 @@ import LocalizedPeerData
 public final class EntityKeyboardChildEnvironment: Equatable {
     public let theme: PresentationTheme
     public let strings: PresentationStrings
+    public let isContentInFocus: Bool
     public let getContentActiveItemUpdated: (AnyHashable) -> ActionSlot<(AnyHashable, AnyHashable?, Transition)>?
     
     public init(
         theme: PresentationTheme,
         strings: PresentationStrings,
+        isContentInFocus: Bool,
         getContentActiveItemUpdated: @escaping (AnyHashable) -> ActionSlot<(AnyHashable, AnyHashable?, Transition)>?
     ) {
         self.theme = theme
         self.strings = strings
+        self.isContentInFocus = isContentInFocus
         self.getContentActiveItemUpdated = getContentActiveItemUpdated
     }
     
@@ -32,6 +34,9 @@ public final class EntityKeyboardChildEnvironment: Equatable {
             return false
         }
         if lhs.strings !== rhs.strings {
+            return false
+        }
+        if lhs.isContentInFocus != rhs.isContentInFocus {
             return false
         }
         
@@ -50,9 +55,16 @@ public final class EntityKeyboardComponent: Component {
         }
     }
     
-    private enum ReorderCategory {
+    public enum ReorderCategory {
         case stickers
         case emoji
+        case masks
+    }
+    
+    public enum DisplayTopPanelBackground {
+        case none
+        case blur
+        case opaque
     }
     
     public struct GifSearchEmoji: Equatable {
@@ -82,61 +94,97 @@ public final class EntityKeyboardComponent: Component {
     
     public let theme: PresentationTheme
     public let strings: PresentationStrings
+    public let isContentInFocus: Bool
     public let containerInsets: UIEdgeInsets
-    public let emojiContent: EmojiPagerContentComponent
+    public let topPanelInsets: UIEdgeInsets
+    public let emojiContent: EmojiPagerContentComponent?
     public let stickerContent: EmojiPagerContentComponent?
+    public let maskContent: EmojiPagerContentComponent?
     public let gifContent: GifPagerContentComponent?
     public let hasRecentGifs: Bool
     public let availableGifSearchEmojies: [GifSearchEmoji]
     public let defaultToEmojiTab: Bool
     public let externalTopPanelContainer: PagerExternalTopPanelContainer?
+    public let externalBottomPanelContainer: PagerExternalTopPanelContainer?
+    public let displayTopPanelBackground: DisplayTopPanelBackground
     public let topPanelExtensionUpdated: (CGFloat, Transition) -> Void
     public let hideInputUpdated: (Bool, Bool, Transition) -> Void
+    public let hideTopPanelUpdated: (Bool, Transition) -> Void
     public let switchToTextInput: () -> Void
     public let switchToGifSubject: (GifPagerContentComponent.Subject) -> Void
+    public let reorderItems: (ReorderCategory, [EntityKeyboardTopPanelComponent.Item]) -> Void
     public let makeSearchContainerNode: (EntitySearchContentType) -> EntitySearchContainerNode?
+    public let contentIdUpdated: (AnyHashable) -> Void
     public let deviceMetrics: DeviceMetrics
     public let hiddenInputHeight: CGFloat
+    public let inputHeight: CGFloat
+    public let displayBottomPanel: Bool
     public let isExpanded: Bool
+    public let clipContentToTopPanel: Bool
+    public let hidePanels: Bool
     
     public init(
         theme: PresentationTheme,
         strings: PresentationStrings,
+        isContentInFocus: Bool,
         containerInsets: UIEdgeInsets,
-        emojiContent: EmojiPagerContentComponent,
+        topPanelInsets: UIEdgeInsets,
+        emojiContent: EmojiPagerContentComponent?,
         stickerContent: EmojiPagerContentComponent?,
+        maskContent: EmojiPagerContentComponent?,
         gifContent: GifPagerContentComponent?,
         hasRecentGifs: Bool,
         availableGifSearchEmojies: [GifSearchEmoji],
         defaultToEmojiTab: Bool,
         externalTopPanelContainer: PagerExternalTopPanelContainer?,
+        externalBottomPanelContainer: PagerExternalTopPanelContainer?,
+        displayTopPanelBackground: DisplayTopPanelBackground,
         topPanelExtensionUpdated: @escaping (CGFloat, Transition) -> Void,
         hideInputUpdated: @escaping (Bool, Bool, Transition) -> Void,
+        hideTopPanelUpdated: @escaping (Bool, Transition) -> Void,
         switchToTextInput: @escaping () -> Void,
         switchToGifSubject: @escaping (GifPagerContentComponent.Subject) -> Void,
+        reorderItems: @escaping (ReorderCategory, [EntityKeyboardTopPanelComponent.Item]) -> Void,
         makeSearchContainerNode: @escaping (EntitySearchContentType) -> EntitySearchContainerNode?,
+        contentIdUpdated: @escaping (AnyHashable) -> Void,
         deviceMetrics: DeviceMetrics,
         hiddenInputHeight: CGFloat,
-        isExpanded: Bool
+        inputHeight: CGFloat,
+        displayBottomPanel: Bool,
+        isExpanded: Bool,
+        clipContentToTopPanel: Bool,
+        hidePanels: Bool = false
     ) {
         self.theme = theme
         self.strings = strings
+        self.isContentInFocus = isContentInFocus
         self.containerInsets = containerInsets
+        self.topPanelInsets = topPanelInsets
         self.emojiContent = emojiContent
         self.stickerContent = stickerContent
+        self.maskContent = maskContent
         self.gifContent = gifContent
         self.hasRecentGifs = hasRecentGifs
         self.availableGifSearchEmojies = availableGifSearchEmojies
         self.defaultToEmojiTab = defaultToEmojiTab
         self.externalTopPanelContainer = externalTopPanelContainer
+        self.externalBottomPanelContainer = externalBottomPanelContainer
+        self.displayTopPanelBackground = displayTopPanelBackground
         self.topPanelExtensionUpdated = topPanelExtensionUpdated
         self.hideInputUpdated = hideInputUpdated
+        self.hideTopPanelUpdated = hideTopPanelUpdated
         self.switchToTextInput = switchToTextInput
         self.switchToGifSubject = switchToGifSubject
+        self.reorderItems = reorderItems
         self.makeSearchContainerNode = makeSearchContainerNode
+        self.contentIdUpdated = contentIdUpdated
         self.deviceMetrics = deviceMetrics
         self.hiddenInputHeight = hiddenInputHeight
+        self.inputHeight = inputHeight
+        self.displayBottomPanel = displayBottomPanel
         self.isExpanded = isExpanded
+        self.clipContentToTopPanel = clipContentToTopPanel
+        self.hidePanels = hidePanels
     }
     
     public static func ==(lhs: EntityKeyboardComponent, rhs: EntityKeyboardComponent) -> Bool {
@@ -146,13 +194,22 @@ public final class EntityKeyboardComponent: Component {
         if lhs.strings !== rhs.strings {
             return false
         }
+        if lhs.isContentInFocus != rhs.isContentInFocus {
+            return false
+        }
         if lhs.containerInsets != rhs.containerInsets {
+            return false
+        }
+        if lhs.topPanelInsets != rhs.topPanelInsets {
             return false
         }
         if lhs.emojiContent != rhs.emojiContent {
             return false
         }
         if lhs.stickerContent != rhs.stickerContent {
+            return false
+        }
+        if lhs.maskContent != rhs.maskContent {
             return false
         }
         if lhs.gifContent != rhs.gifContent {
@@ -170,13 +227,25 @@ public final class EntityKeyboardComponent: Component {
         if lhs.externalTopPanelContainer != rhs.externalTopPanelContainer {
             return false
         }
+        if lhs.displayTopPanelBackground != rhs.displayTopPanelBackground {
+            return false
+        }
         if lhs.deviceMetrics != rhs.deviceMetrics {
             return false
         }
         if lhs.hiddenInputHeight != rhs.hiddenInputHeight {
             return false
         }
+        if lhs.inputHeight != rhs.inputHeight {
+            return false
+        }
+        if lhs.displayBottomPanel != rhs.displayBottomPanel {
+            return false
+        }
         if lhs.isExpanded != rhs.isExpanded {
+            return false
+        }
+        if lhs.clipContentToTopPanel != rhs.clipContentToTopPanel {
             return false
         }
         
@@ -196,6 +265,7 @@ public final class EntityKeyboardComponent: Component {
         
         private var topPanelExtension: CGFloat?
         private var isTopPanelExpanded: Bool = false
+        private var isTopPanelHidden: Bool = false
         
         public var centralId: AnyHashable? {
             if let pagerView = self.pagerView.findTaggedView(tag: PagerComponentViewTag()) as? PagerComponent<EntityKeyboardChildEnvironment, EntityKeyboardTopContainerPanelEnvironment>.View {
@@ -232,14 +302,99 @@ public final class EntityKeyboardComponent: Component {
             
             let gifsContentItemIdUpdated = ActionSlot<(AnyHashable, AnyHashable?, Transition)>()
             let stickersContentItemIdUpdated = ActionSlot<(AnyHashable, AnyHashable?, Transition)>()
+            let masksContentItemIdUpdated = ActionSlot<(AnyHashable, AnyHashable?, Transition)>()
             
             if transition.userData(MarkInputCollapsed.self) != nil {
                 self.searchComponent = nil
             }
             
+            if let maskContent = component.maskContent {
+                var topMaskItems: [EntityKeyboardTopPanelComponent.Item] = []
+                                
+                for itemGroup in maskContent.panelItemGroups {
+                    if let id = itemGroup.supergroupId.base as? String {
+                        let iconMapping: [String: EntityKeyboardIconTopPanelComponent.Icon] = [
+                            "saved": .saved,
+                            "recent": .recent,
+                            "premium": .premium
+                        ]
+                        let titleMapping: [String: String] = [
+                            "saved": component.strings.Stickers_Favorites,
+                            "recent": component.strings.Stickers_Recent,
+                            "premium": component.strings.EmojiInput_PanelTitlePremium
+                        ]
+                        if let icon = iconMapping[id], let title = titleMapping[id] {
+                            topMaskItems.append(EntityKeyboardTopPanelComponent.Item(
+                                id: itemGroup.supergroupId,
+                                isReorderable: false,
+                                content: AnyComponent(EntityKeyboardIconTopPanelComponent(
+                                    icon: icon,
+                                    theme: component.theme,
+                                    useAccentColor: false,
+                                    title: title,
+                                    pressed: { [weak self] in
+                                        self?.scrollToItemGroup(contentId: "masks", groupId: itemGroup.supergroupId, subgroupId: nil)
+                                    }
+                                ))
+                            ))
+                        }
+                    } else {
+                        if !itemGroup.items.isEmpty {
+                            if let animationData = itemGroup.items[0].animationData {
+                                topMaskItems.append(EntityKeyboardTopPanelComponent.Item(
+                                    id: itemGroup.supergroupId,
+                                    isReorderable: !itemGroup.isFeatured,
+                                    content: AnyComponent(EntityKeyboardAnimationTopPanelComponent(
+                                        context: maskContent.context,
+                                        item: itemGroup.headerItem ?? animationData,
+                                        isFeatured: itemGroup.isFeatured,
+                                        isPremiumLocked: itemGroup.isPremiumLocked,
+                                        animationCache: maskContent.animationCache,
+                                        animationRenderer: maskContent.animationRenderer,
+                                        theme: component.theme,
+                                        title: itemGroup.title ?? "",
+                                        pressed: { [weak self] in
+                                            self?.scrollToItemGroup(contentId: "masks", groupId: itemGroup.supergroupId, subgroupId: nil)
+                                        }
+                                    ))
+                                ))
+                            }
+                        }
+                    }
+                }
+                contents.append(AnyComponentWithIdentity(id: "masks", component: AnyComponent(maskContent)))
+                contentTopPanels.append(AnyComponentWithIdentity(id: "masks", component: AnyComponent(EntityKeyboardTopPanelComponent(
+                    id: "masks",
+                    theme: component.theme,
+                    items: topMaskItems,
+                    containerSideInset: component.containerInsets.left + component.topPanelInsets.left,
+                    defaultActiveItemId: maskContent.panelItemGroups.first?.groupId,
+                    activeContentItemIdUpdated: masksContentItemIdUpdated,
+                    reorderItems: { [weak self] items in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.reorderPacks(category: .masks, items: items)
+                    }
+                ))))
+                contentIcons.append(PagerComponentContentIcon(id: "masks", imageName: "Chat/Input/Media/EntityInputMasksIcon", title: component.strings.EmojiInput_TabMasks))
+                if let _ = component.maskContent?.inputInteractionHolder.inputInteraction?.openStickerSettings {
+                    contentAccessoryRightButtons.append(AnyComponentWithIdentity(id: "masks", component: AnyComponent(Button(
+                        content: AnyComponent(BundleIconComponent(
+                            name: "Chat/Input/Media/EntityInputSettingsIcon",
+                            tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
+                            maxSize: nil
+                        )),
+                        action: {
+                            maskContent.inputInteractionHolder.inputInteraction?.openStickerSettings?()
+                        }
+                    ).minSize(CGSize(width: 38.0, height: 38.0)))))
+                }
+            }
+            
             if let gifContent = component.gifContent {
                 contents.append(AnyComponentWithIdentity(id: "gifs", component: AnyComponent(gifContent)))
-                var topGifItems: [EntityKeyboardTopPanelComponent.Item] = []
+                /*var topGifItems: [EntityKeyboardTopPanelComponent.Item] = []
                 if component.hasRecentGifs {
                     topGifItems.append(EntityKeyboardTopPanelComponent.Item(
                         id: "recent",
@@ -247,6 +402,7 @@ public final class EntityKeyboardComponent: Component {
                         content: AnyComponent(EntityKeyboardIconTopPanelComponent(
                             icon: .recent,
                             theme: component.theme,
+                            useAccentColor: false,
                             title: component.strings.Stickers_Recent,
                             pressed: { [weak self] in
                                 self?.component?.switchToGifSubject(.recent)
@@ -260,30 +416,33 @@ public final class EntityKeyboardComponent: Component {
                     content: AnyComponent(EntityKeyboardIconTopPanelComponent(
                         icon: .trending,
                         theme: component.theme,
+                        useAccentColor: false,
                         title: component.strings.Stickers_Trending,
                         pressed: { [weak self] in
                             self?.component?.switchToGifSubject(.trending)
                         }
                     ))
                 ))
-                for emoji in component.availableGifSearchEmojies {
-                    topGifItems.append(EntityKeyboardTopPanelComponent.Item(
-                        id: emoji.emoji,
-                        isReorderable: false,
-                        content: AnyComponent(EntityKeyboardAnimationTopPanelComponent(
-                            context: component.emojiContent.context,
-                            item: EntityKeyboardAnimationData(file: emoji.file),
-                            isFeatured: false,
-                            isPremiumLocked: false,
-                            animationCache: component.emojiContent.animationCache,
-                            animationRenderer: component.emojiContent.animationRenderer,
-                            theme: component.theme,
-                            title: emoji.title,
-                            pressed: { [weak self] in
-                                self?.component?.switchToGifSubject(.emojiSearch(emoji.emoji))
-                            }
+                if let emojiContent = component.emojiContent {
+                    for emoji in component.availableGifSearchEmojies {
+                        topGifItems.append(EntityKeyboardTopPanelComponent.Item(
+                            id: emoji.emoji,
+                            isReorderable: false,
+                            content: AnyComponent(EntityKeyboardAnimationTopPanelComponent(
+                                context: emojiContent.context,
+                                item: EntityKeyboardAnimationData(file: emoji.file),
+                                isFeatured: false,
+                                isPremiumLocked: false,
+                                animationCache: emojiContent.animationCache,
+                                animationRenderer: emojiContent.animationRenderer,
+                                theme: component.theme,
+                                title: emoji.title,
+                                pressed: { [weak self] in
+                                    self?.component?.switchToGifSubject(.emojiSearch(emoji.emoji))
+                                }
+                            ))
                         ))
-                    ))
+                    }
                 }
                 let defaultActiveGifItemId: AnyHashable
                 switch gifContent.subject {
@@ -295,44 +454,38 @@ public final class EntityKeyboardComponent: Component {
                     defaultActiveGifItemId = AnyHashable(value)
                 }
                 contentTopPanels.append(AnyComponentWithIdentity(id: "gifs", component: AnyComponent(EntityKeyboardTopPanelComponent(
+                    id: "gifs",
                     theme: component.theme,
                     items: topGifItems,
-                    containerSideInset: component.containerInsets.left,
+                    containerSideInset: component.containerInsets.left + component.topPanelInsets.left,
                     forceActiveItemId: defaultActiveGifItemId,
                     activeContentItemIdUpdated: gifsContentItemIdUpdated,
                     reorderItems: { _ in
                     }
-                ))))
-                contentIcons.append(PagerComponentContentIcon(id: "gifs", imageName: "Chat/Input/Media/EntityInputGifsIcon"))
-                contentAccessoryLeftButtons.append(AnyComponentWithIdentity(id: "gifs", component: AnyComponent(Button(
-                    content: AnyComponent(BundleIconComponent(
-                        name: "Chat/Input/Media/EntityInputSearchIcon",
-                        tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
-                        maxSize: nil
-                    )),
-                    action: { [weak self] in
-                        self?.openSearch()
-                    }
-                ).minSize(CGSize(width: 38.0, height: 38.0)))))
+                ))))*/
+                contentIcons.append(PagerComponentContentIcon(id: "gifs", imageName: "Chat/Input/Media/EntityInputGifsIcon", title: component.strings.EmojiInput_TabGifs))
             }
             
             if let stickerContent = component.stickerContent {
                 var topStickerItems: [EntityKeyboardTopPanelComponent.Item] = []
                 
-                topStickerItems.append(EntityKeyboardTopPanelComponent.Item(
-                    id: "featuredTop",
-                    isReorderable: false,
-                    content: AnyComponent(EntityKeyboardIconTopPanelComponent(
-                        icon: .featured,
-                        theme: component.theme,
-                        title: component.strings.Stickers_Trending,
-                        pressed: { [weak self] in
-                            self?.component?.stickerContent?.inputInteractionHolder.inputInteraction?.openFeatured()
-                        }
+                if let _ = stickerContent.inputInteractionHolder.inputInteraction?.openFeatured {
+                    topStickerItems.append(EntityKeyboardTopPanelComponent.Item(
+                        id: "featuredTop",
+                        isReorderable: false,
+                        content: AnyComponent(EntityKeyboardIconTopPanelComponent(
+                            icon: .featured,
+                            theme: component.theme,
+                            useAccentColor: false,
+                            title: component.strings.Stickers_Trending,
+                            pressed: { [weak self] in
+                                self?.component?.stickerContent?.inputInteractionHolder.inputInteraction?.openFeatured?()
+                            }
+                        ))
                     ))
-                ))
+                }
                 
-                for itemGroup in stickerContent.itemGroups {
+                for itemGroup in stickerContent.panelItemGroups {
                     if let id = itemGroup.supergroupId.base as? String {
                         if id == "peerSpecific" {
                             if let avatarPeer = stickerContent.avatarPeer {
@@ -368,6 +521,7 @@ public final class EntityKeyboardComponent: Component {
                                     content: AnyComponent(EntityKeyboardIconTopPanelComponent(
                                         icon: icon,
                                         theme: component.theme,
+                                        useAccentColor: false,
                                         title: title,
                                         pressed: { [weak self] in
                                             self?.scrollToItemGroup(contentId: "stickers", groupId: itemGroup.supergroupId, subgroupId: nil)
@@ -402,10 +556,11 @@ public final class EntityKeyboardComponent: Component {
                 }
                 contents.append(AnyComponentWithIdentity(id: "stickers", component: AnyComponent(stickerContent)))
                 contentTopPanels.append(AnyComponentWithIdentity(id: "stickers", component: AnyComponent(EntityKeyboardTopPanelComponent(
+                    id: "stickers",
                     theme: component.theme,
                     items: topStickerItems,
-                    containerSideInset: component.containerInsets.left,
-                    defaultActiveItemId: stickerContent.itemGroups.first?.groupId,
+                    containerSideInset: component.containerInsets.left + component.topPanelInsets.left,
+                    defaultActiveItemId: stickerContent.panelItemGroups.first?.groupId,
                     activeContentItemIdUpdated: stickersContentItemIdUpdated,
                     reorderItems: { [weak self] items in
                         guard let strongSelf = self else {
@@ -414,140 +569,145 @@ public final class EntityKeyboardComponent: Component {
                         strongSelf.reorderPacks(category: .stickers, items: items)
                     }
                 ))))
-                contentIcons.append(PagerComponentContentIcon(id: "stickers", imageName: "Chat/Input/Media/EntityInputStickersIcon"))
-                contentAccessoryLeftButtons.append(AnyComponentWithIdentity(id: "stickers", component: AnyComponent(Button(
-                    content: AnyComponent(BundleIconComponent(
-                        name: "Chat/Input/Media/EntityInputSearchIcon",
-                        tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
-                        maxSize: nil
-                    )),
-                    action: { [weak self] in
-                        self?.openSearch()
-                    }
-                ).minSize(CGSize(width: 38.0, height: 38.0)))))
-                contentAccessoryRightButtons.append(AnyComponentWithIdentity(id: "stickers", component: AnyComponent(Button(
-                    content: AnyComponent(BundleIconComponent(
-                        name: "Chat/Input/Media/EntityInputSettingsIcon",
-                        tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
-                        maxSize: nil
-                    )),
-                    action: {
-                        stickerContent.inputInteractionHolder.inputInteraction?.openStickerSettings()
-                    }
-                ).minSize(CGSize(width: 38.0, height: 38.0)))))
+                contentIcons.append(PagerComponentContentIcon(id: "stickers", imageName: "Chat/Input/Media/EntityInputStickersIcon", title: component.strings.EmojiInput_TabStickers))
+                if let _ = component.stickerContent?.inputInteractionHolder.inputInteraction?.openStickerSettings {
+                    contentAccessoryRightButtons.append(AnyComponentWithIdentity(id: "stickers", component: AnyComponent(Button(
+                        content: AnyComponent(BundleIconComponent(
+                            name: "Chat/Input/Media/EntityInputSettingsIcon",
+                            tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
+                            maxSize: nil
+                        )),
+                        action: {
+                            stickerContent.inputInteractionHolder.inputInteraction?.openStickerSettings?()
+                        }
+                    ).minSize(CGSize(width: 38.0, height: 38.0)))))
+                }
             }
             
+            let deleteBackwards = component.emojiContent?.inputInteractionHolder.inputInteraction?.deleteBackwards
+            
             let emojiContentItemIdUpdated = ActionSlot<(AnyHashable, AnyHashable?, Transition)>()
-            contents.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(component.emojiContent)))
-            var topEmojiItems: [EntityKeyboardTopPanelComponent.Item] = []
-            for itemGroup in component.emojiContent.itemGroups {
-                if !itemGroup.items.isEmpty {
-                    if let id = itemGroup.groupId.base as? String {
-                        if id == "recent" {
-                            let iconMapping: [String: EntityKeyboardIconTopPanelComponent.Icon] = [
-                                "recent": .recent,
-                            ]
-                            let titleMapping: [String: String] = [
-                                "recent": component.strings.Stickers_Recent,
-                            ]
-                            if let icon = iconMapping[id], let title = titleMapping[id] {
+            if let emojiContent = component.emojiContent {
+                contents.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(emojiContent)))
+                var topEmojiItems: [EntityKeyboardTopPanelComponent.Item] = []
+                for itemGroup in emojiContent.panelItemGroups {
+                    if !itemGroup.items.isEmpty {
+                        if let id = itemGroup.groupId.base as? String {
+                            if id == "recent" {
+                                let iconMapping: [String: EntityKeyboardIconTopPanelComponent.Icon] = [
+                                    "recent": .recent,
+                                ]
+                                let titleMapping: [String: String] = [
+                                    "recent": component.strings.Stickers_Recent,
+                                ]
+                                if let icon = iconMapping[id], let title = titleMapping[id] {
+                                    topEmojiItems.append(EntityKeyboardTopPanelComponent.Item(
+                                        id: itemGroup.supergroupId,
+                                        isReorderable: false,
+                                        content: AnyComponent(EntityKeyboardIconTopPanelComponent(
+                                            icon: icon,
+                                            theme: component.theme,
+                                            useAccentColor: false,
+                                            title: title,
+                                            pressed: { [weak self] in
+                                                self?.scrollToItemGroup(contentId: "emoji", groupId: itemGroup.supergroupId, subgroupId: nil)
+                                            }
+                                        ))
+                                    ))
+                                }
+                            } else if id == "static" {
                                 topEmojiItems.append(EntityKeyboardTopPanelComponent.Item(
                                     id: itemGroup.supergroupId,
                                     isReorderable: false,
-                                    content: AnyComponent(EntityKeyboardIconTopPanelComponent(
-                                        icon: icon,
+                                    content: AnyComponent(EntityKeyboardStaticStickersPanelComponent(
                                         theme: component.theme,
-                                        title: title,
+                                        title: component.strings.EmojiInput_PanelTitleEmoji,
+                                        pressed: { [weak self] subgroupId in
+                                            guard let strongSelf = self else {
+                                                return
+                                            }
+                                            strongSelf.scrollToItemGroup(contentId: "emoji", groupId: itemGroup.supergroupId, subgroupId: subgroupId.rawValue)
+                                        }
+                                    ))
+                                ))
+                            }
+                        } else {
+                            if let animationData = itemGroup.items[0].animationData {
+                                topEmojiItems.append(EntityKeyboardTopPanelComponent.Item(
+                                    id: itemGroup.supergroupId,
+                                    isReorderable: !itemGroup.isFeatured,
+                                    content: AnyComponent(EntityKeyboardAnimationTopPanelComponent(
+                                        context: emojiContent.context,
+                                        item: itemGroup.headerItem ?? animationData,
+                                        isFeatured: itemGroup.isFeatured,
+                                        isPremiumLocked: itemGroup.isPremiumLocked,
+                                        animationCache: emojiContent.animationCache,
+                                        animationRenderer: emojiContent.animationRenderer,
+                                        theme: component.theme,
+                                        title: itemGroup.title ?? "",
                                         pressed: { [weak self] in
                                             self?.scrollToItemGroup(contentId: "emoji", groupId: itemGroup.supergroupId, subgroupId: nil)
                                         }
                                     ))
                                 ))
                             }
-                        } else if id == "static" {
-                            topEmojiItems.append(EntityKeyboardTopPanelComponent.Item(
-                                id: itemGroup.supergroupId,
-                                isReorderable: false,
-                                content: AnyComponent(EntityKeyboardStaticStickersPanelComponent(
-                                    theme: component.theme,
-                                    title: component.strings.EmojiInput_PanelTitleEmoji,
-                                    pressed: { [weak self] subgroupId in
-                                        guard let strongSelf = self else {
-                                            return
-                                        }
-                                        strongSelf.scrollToItemGroup(contentId: "emoji", groupId: itemGroup.supergroupId, subgroupId: subgroupId.rawValue)
-                                    }
-                                ))
-                            ))
-                        }
-                    } else {
-                        if let animationData = itemGroup.items[0].animationData {
-                            topEmojiItems.append(EntityKeyboardTopPanelComponent.Item(
-                                id: itemGroup.supergroupId,
-                                isReorderable: !itemGroup.isFeatured,
-                                content: AnyComponent(EntityKeyboardAnimationTopPanelComponent(
-                                    context: component.emojiContent.context,
-                                    item: itemGroup.headerItem ?? animationData,
-                                    isFeatured: itemGroup.isFeatured,
-                                    isPremiumLocked: itemGroup.isPremiumLocked,
-                                    animationCache: component.emojiContent.animationCache,
-                                    animationRenderer: component.emojiContent.animationRenderer,
-                                    theme: component.theme,
-                                    title: itemGroup.title ?? "",
-                                    pressed: { [weak self] in
-                                        self?.scrollToItemGroup(contentId: "emoji", groupId: itemGroup.supergroupId, subgroupId: nil)
-                                    }
-                                ))
-                            ))
                         }
                     }
+                }
+                contentTopPanels.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(EntityKeyboardTopPanelComponent(
+                    id: "emoji",
+                    theme: component.theme,
+                    items: topEmojiItems,
+                    containerSideInset: component.containerInsets.left + component.topPanelInsets.left,
+                    activeContentItemIdUpdated: emojiContentItemIdUpdated,
+                    activeContentItemMapping: ["popular": "recent"],
+                    reorderItems: { [weak self] items in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.reorderPacks(category: .emoji, items: items)
+                    }
+                ))))
+                contentIcons.append(PagerComponentContentIcon(id: "emoji", imageName: "Chat/Input/Media/EntityInputEmojiIcon", title: component.strings.EmojiInput_TabEmoji))
+                if let _ = deleteBackwards {
+                    contentAccessoryLeftButtons.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(Button(
+                        content: AnyComponent(BundleIconComponent(
+                            name: "Chat/Input/Media/EntityInputGlobeIcon",
+                            tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
+                            maxSize: nil
+                        )),
+                        action: { [weak self] in
+                            guard let strongSelf = self, let component = strongSelf.component else {
+                                return
+                            }
+                            component.switchToTextInput()
+                        }
+                    ).minSize(CGSize(width: 38.0, height: 38.0)))))
                 }
             }
-            contentTopPanels.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(EntityKeyboardTopPanelComponent(
-                theme: component.theme,
-                items: topEmojiItems,
-                containerSideInset: component.containerInsets.left,
-                activeContentItemIdUpdated: emojiContentItemIdUpdated,
-                reorderItems: { [weak self] items in
-                    guard let strongSelf = self else {
-                        return
+                            
+            if let _ = deleteBackwards {
+                contentAccessoryRightButtons.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(Button(
+                    content: AnyComponent(BundleIconComponent(
+                        name: "Chat/Input/Media/EntityInputClearIcon",
+                        tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
+                        maxSize: nil
+                    )),
+                    action: {
+                        deleteBackwards?()
+                        AudioServicesPlaySystemSound(1155)
                     }
-                    strongSelf.reorderPacks(category: .emoji, items: items)
-                }
-            ))))
-            contentIcons.append(PagerComponentContentIcon(id: "emoji", imageName: "Chat/Input/Media/EntityInputEmojiIcon"))
-            contentAccessoryLeftButtons.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(Button(
-                content: AnyComponent(BundleIconComponent(
-                    name: "Chat/Input/Media/EntityInputGlobeIcon",
-                    tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
-                    maxSize: nil
-                )),
-                action: { [weak self] in
-                    guard let strongSelf = self, let component = strongSelf.component else {
-                        return
-                    }
-                    component.switchToTextInput()
-                }
-            ).minSize(CGSize(width: 38.0, height: 38.0)))))
-            let deleteBackwards = component.emojiContent.inputInteractionHolder.inputInteraction?.deleteBackwards
-            contentAccessoryRightButtons.append(AnyComponentWithIdentity(id: "emoji", component: AnyComponent(Button(
-                content: AnyComponent(BundleIconComponent(
-                    name: "Chat/Input/Media/EntityInputClearIcon",
-                    tintColor: component.theme.chat.inputMediaPanel.panelIconColor,
-                    maxSize: nil
-                )),
-                action: {
+                ).withHoldAction({
                     deleteBackwards?()
                     AudioServicesPlaySystemSound(1155)
-                }
-            ).withHoldAction({
-                deleteBackwards?()
-                AudioServicesPlaySystemSound(1155)
-            }).minSize(CGSize(width: 38.0, height: 38.0)))))
+                }).minSize(CGSize(width: 38.0, height: 38.0)))))
+            }
             
             let panelHideBehavior: PagerComponentPanelHideBehavior
             if self.searchComponent != nil {
                 panelHideBehavior = .hide
+            } else if component.hidePanels {
+                panelHideBehavior = .disable
             } else if component.isExpanded {
                 panelHideBehavior = .show
             } else {
@@ -557,6 +717,7 @@ public final class EntityKeyboardComponent: Component {
             let pagerSize = self.pagerView.update(
                 transition: transition,
                 component: AnyComponent(PagerComponent(
+                    isContentInFocus: component.isContentInFocus,
                     contentInsets: component.containerInsets,
                     contents: contents,
                     contentTopPanels: contentTopPanels,
@@ -568,17 +729,18 @@ public final class EntityKeyboardComponent: Component {
                     topPanel: AnyComponent(EntityKeyboardTopContainerPanelComponent(
                         theme: component.theme,
                         overflowHeight: component.hiddenInputHeight,
-                        displayBackground: component.externalTopPanelContainer == nil
+                        displayBackground: component.externalTopPanelContainer != nil ? .none : component.displayTopPanelBackground
                     )),
                     externalTopPanelContainer: component.externalTopPanelContainer,
-                    bottomPanel: AnyComponent(EntityKeyboardBottomPanelComponent(
+                    bottomPanel: component.displayBottomPanel ? AnyComponent(EntityKeyboardBottomPanelComponent(
                         theme: component.theme,
                         containerInsets: component.containerInsets,
                         deleteBackwards: { [weak self] in
-                            self?.component?.emojiContent.inputInteractionHolder.inputInteraction?.deleteBackwards()
+                            self?.component?.emojiContent?.inputInteractionHolder.inputInteraction?.deleteBackwards?()
                             AudioServicesPlaySystemSound(0x451)
                         }
-                    )),
+                    )) : nil,
+                    externalBottomPanelContainer: component.externalBottomPanelContainer,
                     panelStateUpdated: { [weak self] panelState, transition in
                         guard let strongSelf = self else {
                             return
@@ -591,12 +753,26 @@ public final class EntityKeyboardComponent: Component {
                         }
                         strongSelf.isTopPanelExpandedUpdated(isExpanded: isExpanded, transition: transition)
                     },
-                    panelHideBehavior: panelHideBehavior
+                    isTopPanelHiddenUpdated: { [weak self] isTopPanelHidden, transition in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.isTopPanelHiddenUpdated(isTopPanelHidden: isTopPanelHidden, transition: transition)
+                    },
+                    contentIdUpdated: { [weak self] id in
+                        guard let strongSelf = self, let component = strongSelf.component else {
+                            return
+                        }
+                        component.contentIdUpdated(id)
+                    },
+                    panelHideBehavior: panelHideBehavior,
+                    clipContentToTopPanel: component.clipContentToTopPanel
                 )),
                 environment: {
                     EntityKeyboardChildEnvironment(
                         theme: component.theme,
                         strings: component.strings,
+                        isContentInFocus: component.isContentInFocus,
                         getContentActiveItemUpdated: { id in
                             if id == AnyHashable("gifs") {
                                 return gifsContentItemIdUpdated
@@ -604,6 +780,8 @@ public final class EntityKeyboardComponent: Component {
                                 return stickersContentItemIdUpdated
                             } else if id == AnyHashable("emoji") {
                                 return emojiContentItemIdUpdated
+                            } else if id == AnyHashable("masks") {
+                                return masksContentItemIdUpdated
                             }
                             return nil
                         }
@@ -613,7 +791,8 @@ public final class EntityKeyboardComponent: Component {
             )
             transition.setFrame(view: self.pagerView, frame: CGRect(origin: CGPoint(), size: pagerSize))
             
-            if let searchComponent = self.searchComponent {
+            let accountContext = component.emojiContent?.context ?? component.stickerContent?.context
+            if let searchComponent = self.searchComponent, let accountContext = accountContext {
                 var animateIn = false
                 let searchView: ComponentHostView<EntitySearchContentEnvironment>
                 var searchViewTransition = transition
@@ -634,9 +813,10 @@ public final class EntityKeyboardComponent: Component {
                     component: AnyComponent(searchComponent),
                     environment: {
                         EntitySearchContentEnvironment(
-                            context: component.emojiContent.context,
+                            context: accountContext,
                             theme: component.theme,
-                            deviceMetrics: component.deviceMetrics
+                            deviceMetrics: component.deviceMetrics,
+                            inputHeight: component.inputHeight
                         )
                     },
                     containerSize: availableSize
@@ -691,7 +871,28 @@ public final class EntityKeyboardComponent: Component {
             component.hideInputUpdated(self.isTopPanelExpanded, false, transition)
         }
         
-        private func openSearch() {
+        private func isTopPanelHiddenUpdated(isTopPanelHidden: Bool, transition: Transition) {
+            if self.isTopPanelHidden != isTopPanelHidden {
+                self.isTopPanelHidden = isTopPanelHidden
+            }
+            
+            guard let component = self.component else {
+                return
+            }
+            
+            component.hideTopPanelUpdated(self.isTopPanelHidden, transition)
+        }
+        
+        public func scrollToContentId(_ contentId: AnyHashable) {
+            guard let _ = self.component else {
+                return
+            }
+            if let pagerView = self.pagerView.findTaggedView(tag: PagerComponentViewTag()) as? PagerComponent<EntityKeyboardChildEnvironment, EntityKeyboardTopContainerPanelEnvironment>.View {
+                pagerView.navigateToContentId(contentId)
+            }
+        }
+        
+        public func openSearch() {
             guard let component = self.component else {
                 return
             }
@@ -720,6 +921,25 @@ public final class EntityKeyboardComponent: Component {
             }
         }
         
+        public func openCustomSearch(content: EntitySearchContainerNode) {
+            guard let component = self.component else {
+                return
+            }
+            if self.searchComponent != nil {
+                return
+            }
+            
+            self.searchComponent = EntitySearchContentComponent(
+                makeContainerNode: {
+                    return content
+                },
+                dismissSearch: { [weak self] in
+                    self?.closeSearch()
+                }
+            )
+            component.hideInputUpdated(true, true, Transition(animation: .curve(duration: 0.3, curve: .spring)))
+        }
+        
         private func closeSearch() {
             guard let component = self.component else {
                 return
@@ -732,7 +952,7 @@ public final class EntityKeyboardComponent: Component {
             component.hideInputUpdated(false, false, Transition(animation: .curve(duration: 0.4, curve: .spring)))
         }
         
-        private func scrollToItemGroup(contentId: String, groupId: AnyHashable, subgroupId: Int32?) {
+        public func scrollToItemGroup(contentId: String, groupId: AnyHashable, subgroupId: Int32?, animated: Bool = true) {
             guard let pagerView = self.pagerView.findTaggedView(tag: PagerComponentViewTag()) as? PagerComponent<EntityKeyboardChildEnvironment, EntityKeyboardTopContainerPanelEnvironment>.View else {
                 return
             }
@@ -742,36 +962,14 @@ public final class EntityKeyboardComponent: Component {
             if let topPanelView = pagerView.topPanelComponentView as? EntityKeyboardTopContainerPanelComponent.View {
                 topPanelView.internalUpdatePanelsAreCollapsed()
             }
-            pagerContentView.scrollToItemGroup(id: groupId, subgroupId: subgroupId)
+            self.component?.emojiContent?.inputInteractionHolder.inputInteraction?.updateScrollingToItemGroup()
+            
+            pagerContentView.scrollToItemGroup(id: groupId, subgroupId: subgroupId, animated: animated)
             pagerView.collapseTopPanel()
         }
         
         private func reorderPacks(category: ReorderCategory, items: [EntityKeyboardTopPanelComponent.Item]) {
-            guard let component = self.component else {
-                return
-            }
-            
-            var currentIds: [ItemCollectionId] = []
-            for item in items {
-                guard let id = item.id.base as? ItemCollectionId else {
-                    continue
-                }
-                currentIds.append(id)
-            }
-            let namespace: ItemCollectionId.Namespace
-            switch category {
-            case .stickers:
-                namespace = Namespaces.ItemCollection.CloudStickerPacks
-            case .emoji:
-                namespace = Namespaces.ItemCollection.CloudEmojiPacks
-            }
-            let _ = (component.emojiContent.context.engine.stickers.reorderStickerPacks(namespace: namespace, itemIds: currentIds)
-            |> deliverOnMainQueue).start(completed: { [weak self] in
-                guard let strongSelf = self else {
-                    return
-                }
-                strongSelf.state?.updated(transition: Transition(animation: .curve(duration: 0.4, curve: .spring)))
-            })
+            self.component?.reorderItems(category, items)
         }
     }
     

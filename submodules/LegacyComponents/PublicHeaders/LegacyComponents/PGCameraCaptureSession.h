@@ -4,11 +4,15 @@
 
 @class PGCameraMovieWriter;
 @class PGRectangleDetector;
+@class SQueue;
 
 @interface PGCameraCaptureSession : AVCaptureSession
 
 @property (nonatomic, readonly) AVCaptureDevice *videoDevice;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 @property (nonatomic, readonly) AVCaptureStillImageOutput *imageOutput;
+#pragma clang diagnostic pop
 @property (nonatomic, readonly) AVCaptureVideoDataOutput *videoOutput;
 @property (nonatomic, readonly) AVCaptureAudioDataOutput *audioOutput;
 @property (nonatomic, readonly) AVCaptureMetadataOutput *metadataOutput;
@@ -42,8 +46,6 @@
 
 @property (nonatomic, copy) void(^recognizedQRCode)(NSString *value, AVMetadataMachineReadableCodeObject *object);
 
-@property (nonatomic, assign) bool compressVideo;
-
 - (instancetype)initWithMode:(PGCameraMode)mode position:(PGCameraPosition)position;
 
 - (void)performInitialConfigurationWithCompletion:(void (^)(void))completion;
@@ -63,5 +65,7 @@
 + (AVCaptureDevice *)_deviceWithCameraPosition:(PGCameraPosition)position;
 
 + (bool)_isZoomAvailableForDevice:(AVCaptureDevice *)device;
+
++ (SQueue *)cameraQueue;
 
 @end

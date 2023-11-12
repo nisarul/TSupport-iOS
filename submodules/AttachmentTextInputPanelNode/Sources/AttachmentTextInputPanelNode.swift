@@ -336,10 +336,8 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
         self.presentController = presentController
         self.makeEntityInputView = makeEntityInputView
         
-        self.animationCache = AnimationCacheImpl(basePath: context.account.postbox.mediaBox.basePath + "/animation-cache", allocateTempFile: {
-            return TempBox.shared.tempFile(fileName: "file").path
-        })
-        self.animationRenderer = MultiAnimationRendererImpl()
+        self.animationCache = context.animationCache
+        self.animationRenderer = context.animationRenderer
         
         var hasSpoilers = true
         if presentationInterfaceState.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat {
@@ -423,7 +421,7 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
                 return UIView()
             }
             
-            return EmojiTextAttachmentView(context: context, emoji: emoji, file: emoji.file, cache: strongSelf.animationCache, renderer: strongSelf.animationRenderer, placeholderColor: presentationInterfaceState.theme.chat.inputPanel.inputTextColor.withAlphaComponent(0.12), pointSize: CGSize(width: 24.0, height: 24.0))
+            return EmojiTextAttachmentView(context: context, userLocation: .other, emoji: emoji, file: emoji.file, cache: strongSelf.animationCache, renderer: strongSelf.animationRenderer, placeholderColor: presentationInterfaceState.theme.chat.inputPanel.inputTextColor.withAlphaComponent(0.12), pointSize: CGSize(width: 24.0, height: 24.0))
         }
         
         self.updateSendButtonEnabled(isCaption || isAttachment, animated: false)
@@ -450,11 +448,11 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
     public var focusUpdated: ((Bool) -> Void)?
     public var heightUpdated: ((Bool) -> Void)?
     
-    public func updateLayoutSize(_ size: CGSize, sideInset: CGFloat) -> CGFloat {
+    public func updateLayoutSize(_ size: CGSize, sideInset: CGFloat, animated: Bool) -> CGFloat {
         guard let presentationInterfaceState = self.presentationInterfaceState else {
             return 0.0
         }
-        return self.updateLayout(width: size.width, leftInset: sideInset, rightInset: sideInset, bottomInset: 0.0, additionalSideInsets: UIEdgeInsets(), maxHeight: size.height, isSecondary: false, transition: .immediate, interfaceState: presentationInterfaceState, metrics: LayoutMetrics(widthClass: .compact, heightClass: .compact), isMediaInputExpanded: false)
+        return self.updateLayout(width: size.width, leftInset: sideInset, rightInset: sideInset, bottomInset: 0.0, additionalSideInsets: UIEdgeInsets(), maxHeight: size.height, isSecondary: false, transition: animated ? .animated(duration: 0.2, curve: .easeInOut) : .immediate, interfaceState: presentationInterfaceState, metrics: LayoutMetrics(widthClass: .compact, heightClass: .compact), isMediaInputExpanded: false)
     }
     
     public func setCaption(_ caption: NSAttributedString?) {
@@ -513,6 +511,9 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
         self.textInputContainer.addSubnode(textInputNode)
         textInputNode.view.disablesInteractiveTransitionGestureRecognizer = true
         self.textInputNode = textInputNode
+        
+        textInputNode.textView.inputAssistantItem.leadingBarButtonGroups = []
+        textInputNode.textView.inputAssistantItem.trailingBarButtonGroups = []
         
         if let presentationInterfaceState = self.presentationInterfaceState {
             refreshChatTextInputTypingAttributes(textInputNode, theme: presentationInterfaceState.theme, baseFontSize: baseFontSize)
@@ -1037,7 +1038,7 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
             if let current = self.dustNode {
                 dustNode = current
             } else {
-                dustNode = InvisibleInkDustNode(textNode: nil)
+                dustNode = InvisibleInkDustNode(textNode: nil, enableAnimations: self.context.sharedContext.energyUsageSettings.fullTranslucency)
                 dustNode.alpha = self.spoilersRevealed ? 0.0 : 1.0
                 dustNode.isUserInteractionEnabled = false
                 textInputNode.textView.addSubview(dustNode.view)
@@ -1297,7 +1298,7 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
     private func updateOneLineSpoiler() {
         if let textLayout = self.oneLineNode.textNode.cachedLayout, !textLayout.spoilers.isEmpty {
             if self.oneLineDustNode == nil {
-                let oneLineDustNode = InvisibleInkDustNode(textNode: nil)
+                let oneLineDustNode = InvisibleInkDustNode(textNode: nil, enableAnimations: self.context.sharedContext.energyUsageSettings.fullTranslucency)
                 self.oneLineDustNode = oneLineDustNode
                 self.oneLineNode.textNode.supernode?.insertSubnode(oneLineDustNode, aboveSubnode: self.oneLineNode.textNode)
                 
@@ -1421,13 +1422,17 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
         else if action == makeSelectorFromString("_accessibilitySpeakLanguageSelection:") || action == makeSelectorFromString("_accessibilityPauseSpeaking:") || action == makeSelectorFromString("_accessibilitySpeakSentence:") {
             return ASEditableTextNodeTargetForAction(target: nil)
         } else if action == makeSelectorFromString("_showTextStyleOptions:") {
-            if case .general = self.inputMenu.state {
-                if let textInputNode = self.textInputNode, textInputNode.attributedText == nil || textInputNode.attributedText!.length == 0 || textInputNode.selectedRange.length == 0 {
+            if #available(iOS 16.0, *) {
+                return ASEditableTextNodeTargetForAction(target: nil)
+            } else {
+                if case .general = self.inputMenu.state {
+                    if let textInputNode = self.textInputNode, textInputNode.attributedText == nil || textInputNode.attributedText!.length == 0 || textInputNode.selectedRange.length == 0 {
+                        return ASEditableTextNodeTargetForAction(target: nil)
+                    }
+                    return ASEditableTextNodeTargetForAction(target: self)
+                } else {
                     return ASEditableTextNodeTargetForAction(target: nil)
                 }
-                return ASEditableTextNodeTargetForAction(target: self)
-            } else {
-                return ASEditableTextNodeTargetForAction(target: nil)
             }
         } else if action == #selector(self.formatAttributesBold(_:)) || action == #selector(self.formatAttributesItalic(_:)) || action == #selector(self.formatAttributesMonospace(_:)) || action == #selector(self.formatAttributesLink(_:)) || action == #selector(self.formatAttributesStrikethrough(_:)) || action == #selector(self.formatAttributesUnderline(_:)) || action == #selector(self.formatAttributesSpoiler(_:)) {
             if case .format = self.inputMenu.state {
@@ -1442,14 +1447,80 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
         return nil
     }
     
+    @available(iOS 16.0, *)
+    public func editableTextNodeMenu(_ editableTextNode: ASEditableTextNode, forTextRange textRange: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu {
+        var actions = suggestedActions
+        
+        if editableTextNode.attributedText == nil || editableTextNode.attributedText!.length == 0 || editableTextNode.selectedRange.length == 0 {
+            
+        } else {
+            var children: [UIAction] = [
+                UIAction(title: self.strings?.TextFormat_Bold ?? "Bold", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesBold(strongSelf)
+                    }
+                },
+                UIAction(title: self.strings?.TextFormat_Italic ?? "Italic", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesItalic(strongSelf)
+                    }
+                },
+                UIAction(title: self.strings?.TextFormat_Monospace ?? "Monospace", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesMonospace(strongSelf)
+                    }
+                },
+                UIAction(title: self.strings?.TextFormat_Link ?? "Link", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesLink(strongSelf)
+                    }
+                },
+                UIAction(title: self.strings?.TextFormat_Strikethrough ?? "Strikethrough", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesStrikethrough(strongSelf)
+                    }
+                },
+                UIAction(title: self.strings?.TextFormat_Underline ?? "Underline", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesUnderline(strongSelf)
+                    }
+                }
+            ]
+            
+            var hasSpoilers = true
+            if self.presentationInterfaceState?.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat {
+                hasSpoilers = false
+            }
+            
+            if hasSpoilers {
+                children.append(UIAction(title: self.strings?.TextFormat_Spoiler ?? "Spoiler", image: nil) { [weak self] (action) in
+                    if let strongSelf = self {
+                        strongSelf.formatAttributesSpoiler(strongSelf)
+                    }
+                })
+            }
+            
+            let formatMenu = UIMenu(title: self.strings?.TextFormat_Format ?? "Format", image: nil, children: children)
+            actions.insert(formatMenu, at: 3)
+        }
+        return UIMenu(children: actions)
+    }
+    
+    private var currentSpeechHolder: SpeechSynthesizerHolder?
     @objc func _accessibilitySpeak(_ sender: Any) {
         var text = ""
         self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
             text = current.inputText.attributedSubstring(from: NSMakeRange(current.selectionRange.lowerBound, current.selectionRange.count)).string
             return (current, inputMode)
         }
-        let _ = speakText(context: self.context, text: text)
-        
+        if let speechHolder = speakText(context: self.context, text: text) {
+            speechHolder.completion = { [weak self, weak speechHolder] in
+                if let strongSelf = self, strongSelf.currentSpeechHolder == speechHolder {
+                    strongSelf.currentSpeechHolder = nil
+                }
+            }
+            self.currentSpeechHolder = speechHolder
+        }
         if #available(iOS 13.0, *) {
             UIMenuController.shared.hideMenu()
         } else {

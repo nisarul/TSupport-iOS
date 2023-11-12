@@ -7,6 +7,7 @@ import SwiftSignalKit
 import TelegramPresentationData
 import AccountContext
 import WallpaperBackgroundNode
+import ChatControllerInteraction
 
 private let titleFont = UIFont.systemFont(ofSize: 13.0)
 
@@ -23,7 +24,7 @@ class ChatReplyCountItem: ListViewItem {
         self.isComments = isComments
         self.count = count
         self.presentationData = presentationData
-        self.header = ChatMessageDateHeader(timestamp: index.timestamp, scheduled: false, presentationData: presentationData, context: context)
+        self.header = ChatMessageDateHeader(timestamp: index.timestamp, scheduled: false, presentationData: presentationData, controllerInteraction: controllerInteraction, context: context)
         self.controllerInteraction = controllerInteraction
     }
     
@@ -161,7 +162,7 @@ class ChatReplyCountItemNode: ListViewItemNode {
                     if strongSelf.backgroundNode == nil {
                         if let backgroundNode = item.controllerInteraction.presentationContext.backgroundNode?.makeBubbleBackground(for: .free) {
                             strongSelf.backgroundNode = backgroundNode
-                            backgroundNode.addSubnode(strongSelf.backgroundColorNode)
+                            //backgroundNode.addSubnode(strongSelf.backgroundColorNode)
                             strongSelf.insertSubnode(backgroundNode, at: 0)
                         }
                     }

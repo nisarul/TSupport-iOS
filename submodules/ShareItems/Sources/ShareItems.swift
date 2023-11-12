@@ -414,7 +414,7 @@ public func preparedShareItems(account: Account, to peerId: PeerId, dataItems: [
     })
 }
 
-public func sentShareItems(account: Account, to peerIds: [PeerId], items: [PreparedShareItemContent], silently: Bool) -> Signal<Float, Void> {
+public func sentShareItems(account: Account, to peerIds: [PeerId], threadIds: [PeerId: Int64], items: [PreparedShareItemContent], silently: Bool) -> Signal<Float, Void> {
     var messages: [EnqueueMessage] = []
     var groupingKey: Int64?
     var mediaTypes: (photo: Int, video: Int, music: Int, other: Int) = (0, 0, 0, 0)
@@ -459,11 +459,11 @@ public func sentShareItems(account: Account, to peerIds: [PeerId], items: [Prepa
     for item in items {
         switch item {
             case let .text(text):
-                messages.append(.message(text: text, attributes: attributes, inlineStickers: [:], mediaReference: nil, replyToMessageId: nil, localGroupingKey: nil, correlationId: nil))
+                messages.append(.message(text: text, attributes: attributes, inlineStickers: [:], mediaReference: nil, replyToMessageId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
             case let .media(media):
                 switch media {
                     case let .media(reference):
-                        let message: EnqueueMessage = .message(text: "", attributes: attributes, inlineStickers: [:], mediaReference: reference, replyToMessageId: nil, localGroupingKey: groupingKey, correlationId: nil)
+                        let message: EnqueueMessage = .message(text: "", attributes: attributes, inlineStickers: [:], mediaReference: reference, replyToMessageId: nil, localGroupingKey: groupingKey, correlationId: nil, bubbleUpEmojiOrStickersets: [])
                         messages.append(message)
                         mediaMessages.append(message)
                         
@@ -474,7 +474,7 @@ public func sentShareItems(account: Account, to peerIds: [PeerId], items: [Prepa
         }
     }
     
-    return enqueueMessagesToMultiplePeers(account: account, peerIds: peerIds, messages: messages)
+    return enqueueMessagesToMultiplePeers(account: account, peerIds: peerIds, threadIds: threadIds, messages: messages)
     |> castError(Void.self)
     |> mapToSignal { messageIds -> Signal<Float, Void> in
         return TelegramEngine(account: account).data.subscribe(EngineDataMap(

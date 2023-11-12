@@ -23,6 +23,9 @@ import TelegramNotices
 import TelegramUIPreferences
 import CheckNode
 import AppBundle
+import ChatControllerInteraction
+import InvisibleInkDustNode
+import MediaPickerUI
 
 private final class FrameSequenceThumbnailNode: ASDisplayNode {
     private let context: AccountContext
@@ -43,6 +46,7 @@ private final class FrameSequenceThumbnailNode: ASDisplayNode {
     
     init(
         context: AccountContext,
+        userLocation: MediaResourceUserLocation,
         file: FileMediaReference
     ) {
         self.context = context
@@ -71,6 +75,8 @@ private final class FrameSequenceThumbnailNode: ASDisplayNode {
             
             let source = UniversalSoftwareVideoSource(
                 mediaBox: self.context.account.postbox.mediaBox,
+                userLocation: userLocation,
+                userContentType: .other,
                 fileReference: self.file,
                 automaticallyFetchHeader: true
             )
@@ -772,9 +778,11 @@ private protocol ItemLayer: SparseItemGridLayer {
     var disposable: Disposable? { get set }
 
     var hasContents: Bool { get set }
+    func setSpoilerContents(_ contents: Any?)
     
     func updateDuration(duration: Int32?, isMin: Bool, minFactor: CGFloat)
     func updateSelection(theme: CheckNodeTheme, isSelected: Bool?, animated: Bool)
+    func updateHasSpoiler(hasSpoiler: Bool)
     
     func bind(item: VisualMediaItem)
     func unbind()
@@ -785,6 +793,7 @@ private final class GenericItemLayer: CALayer, ItemLayer {
     var durationLayer: DurationLayer?
     var minFactor: CGFloat = 1.0
     var selectionLayer: GridMessageSelectionLayer?
+    var dustLayer: MediaDustLayer?
     var disposable: Disposable?
 
     var hasContents: Bool = false
@@ -810,6 +819,12 @@ private final class GenericItemLayer: CALayer, ItemLayer {
     func setContents(_ contents: Any?) {
         if let image = contents as? UIImage {
             self.contents = image.cgImage
+        }
+    }
+    
+    func setSpoilerContents(_ contents: Any?) {
+        if let image = contents as? UIImage {
+            self.dustLayer?.contents = image.cgImage
         }
     }
 
@@ -869,6 +884,24 @@ private final class GenericItemLayer: CALayer, ItemLayer {
             }
         }
     }
+    
+    func updateHasSpoiler(hasSpoiler: Bool) {
+        if hasSpoiler {
+            if let _ = self.dustLayer {
+            } else {
+                let dustLayer = MediaDustLayer()
+                self.dustLayer = dustLayer
+                self.addSublayer(dustLayer)
+                if !self.bounds.isEmpty {
+                    dustLayer.frame = CGRect(origin: CGPoint(), size: self.bounds.size)
+                    dustLayer.updateLayout(size: self.bounds.size)
+                }
+            }
+        } else if let dustLayer = self.dustLayer {
+            self.dustLayer = nil
+            dustLayer.removeFromSuperlayer()
+        }
+    }
 
     func unbind() {
         self.item = nil
@@ -890,6 +923,7 @@ private final class CaptureProtectedItemLayer: AVSampleBufferDisplayLayer, ItemL
     var durationLayer: DurationLayer?
     var minFactor: CGFloat = 1.0
     var selectionLayer: GridMessageSelectionLayer?
+    var dustLayer: MediaDustLayer?
     var disposable: Disposable?
 
     var hasContents: Bool = false
@@ -931,6 +965,12 @@ private final class CaptureProtectedItemLayer: AVSampleBufferDisplayLayer, ItemL
             }
         }
     }
+    
+    func setSpoilerContents(_ contents: Any?) {
+        if let image = contents as? UIImage {
+            self.dustLayer?.contents = image.cgImage
+        }
+    }
 
     func bind(item: VisualMediaItem) {
         self.item = item
@@ -982,6 +1022,24 @@ private final class CaptureProtectedItemLayer: AVSampleBufferDisplayLayer, ItemL
             } else {
                 selectionLayer.removeFromSuperlayer()
             }
+        }
+    }
+    
+    func updateHasSpoiler(hasSpoiler: Bool) {
+        if hasSpoiler {
+            if let _ = self.dustLayer {
+            } else {
+                let dustLayer = MediaDustLayer()
+                self.dustLayer = dustLayer
+                self.addSublayer(dustLayer)
+                if !self.bounds.isEmpty {
+                    dustLayer.frame = CGRect(origin: CGPoint(), size: self.bounds.size)
+                    dustLayer.updateLayout(size: self.bounds.size)
+                }
+            }
+        } else if let dustLayer = self.dustLayer {
+            self.dustLayer = nil
+            dustLayer.removeFromSuperlayer()
         }
     }
 
@@ -1092,7 +1150,8 @@ private final class ItemView: UIView, SparseItemGridView {
             self.messageItemNode = messageItemNode
             self.buttonNode.addSubnode(messageItemNode)
         }
-
+        messageItemNode.visibility = .visible(1.0, .infinite)
+        
         messageItemNode.frame = CGRect(origin: CGPoint(), size: size)
         self.buttonNode.frame = CGRect(origin: CGPoint(), size: size)
     }
@@ -1189,6 +1248,8 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
     var onBeginFastScrollingImpl: (() -> Void)?
     var getShimmerColorsImpl: (() -> SparseItemGrid.ShimmerColors)?
     var updateShimmerLayersImpl: ((SparseItemGridDisplayItem) -> Void)?
+    
+    var revealedSpoilerMessageIds = Set<MessageId>()
 
     private var shimmerImages: [CGFloat: UIImage] = [:]
 
@@ -1255,7 +1316,8 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                 peers: SimpleDictionary<PeerId, Peer>(),
                 associatedMessages: SimpleDictionary<MessageId, Message>(),
                 associatedMessageIds: [],
-                associatedMedia: [:]
+                associatedMedia: [:],
+                associatedThreadInfo: nil
             )
             let messageItem = ListMessageItem(
                 presentationData: self.chatPresentationData,
@@ -1389,7 +1451,9 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                 }
 
                 let message = item.message
-
+                let hasSpoiler = message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute }) && !self.revealedSpoilerMessageIds.contains(message.id)
+                layer.updateHasSpoiler(hasSpoiler: hasSpoiler)
+                
                 var selectedMedia: Media?
                 for media in message.media {
                     if let image = media as? TelegramMediaImage {
@@ -1402,7 +1466,7 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                 }
 
                 if let selectedMedia = selectedMedia {
-                    if let result = directMediaImageCache.getImage(message: message, media: selectedMedia, width: imageWidthSpec, possibleWidths: SparseItemGridBindingImpl.widthSpecs.1, synchronous: synchronous == .full) {
+                    if let result = directMediaImageCache.getImage(message: message, media: selectedMedia, width: imageWidthSpec, possibleWidths: SparseItemGridBindingImpl.widthSpecs.1, includeBlurred: hasSpoiler, synchronous: synchronous == .full) {
                         if let image = result.image {
                             layer.setContents(image)
                             switch synchronous {
@@ -1416,6 +1480,9 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                             default:
                                 layer.hasContents = true
                             }
+                        }
+                        if let image = result.blurredImage {
+                            layer.setSpoilerContents(image)
                         }
                         if let loadSignal = result.loadSignal {
                             layer.disposable?.dispose()
@@ -1488,7 +1555,7 @@ private final class SparseItemGridBindingImpl: SparseItemGridBinding, ListShimme
                 } else {
                     layer.updateSelection(theme: self.checkNodeTheme, isSelected: nil, animated: false)
                 }
-
+                
                 layer.bind(item: item)
             }
         }
@@ -1565,7 +1632,7 @@ private func tagMaskForType(_ type: PeerInfoVisualMediaPaneNode.ContentType) -> 
     }
 }
 
-final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScrollViewDelegate {
+final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     enum ContentType {
         case photoOrVideo
         case photo
@@ -1594,6 +1661,8 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
     
     private let context: AccountContext
     private let peerId: PeerId
+    private let chatLocation: ChatLocation
+    private let chatLocationContextHolder: Atomic<ChatLocationContextHolder?>
     private let chatControllerInteraction: ChatControllerInteraction
     private(set) var contentType: ContentType
     private var contentTypePromise: ValuePromise<ContentType>
@@ -1656,10 +1725,12 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
 
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
-    
-    init(context: AccountContext, chatControllerInteraction: ChatControllerInteraction, peerId: PeerId, contentType: ContentType, captureProtected: Bool) {
+        
+    init(context: AccountContext, chatControllerInteraction: ChatControllerInteraction, peerId: PeerId, chatLocation: ChatLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, contentType: ContentType, captureProtected: Bool) {
         self.context = context
         self.peerId = peerId
+        self.chatLocation = chatLocation
+        self.chatLocationContextHolder = chatLocationContextHolder
         self.chatControllerInteraction = chatControllerInteraction
         self.contentType = contentType
         self.contentTypePromise = ValuePromise<ContentType>(contentType)
@@ -1719,12 +1790,21 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
             directMediaImageCache: self.directMediaImageCache,
             captureProtected: captureProtected
         )
+        
+        var threadId: Int64?
+        if case let .replyThread(message) = chatLocation {
+            threadId = Int64(message.messageId.id)
+        }
 
-        self.listSource = self.context.engine.messages.sparseMessageList(peerId: self.peerId, tag: tagMaskForType(self.contentType))
-        switch contentType {
-        case .photoOrVideo, .photo, .video:
-            self.calendarSource = self.context.engine.messages.sparseMessageCalendar(peerId: self.peerId, tag: tagMaskForType(self.contentType))
-        default:
+        self.listSource = self.context.engine.messages.sparseMessageList(peerId: self.peerId, threadId: threadId, tag: tagMaskForType(self.contentType))
+        if threadId == nil {
+            switch contentType {
+            case .photoOrVideo, .photo, .video:
+                self.calendarSource = self.context.engine.messages.sparseMessageCalendar(peerId: self.peerId, threadId: threadId, tag: tagMaskForType(self.contentType))
+            default:
+                self.calendarSource = nil
+            }
+        } else {
             self.calendarSource = nil
         }
         
@@ -2018,7 +2098,7 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
             }
             
             return context.engine.data.subscribe(EngineDataMap(
-                summaries.map { TelegramEngine.EngineData.Item.Messages.MessageCount(peerId: peerId, tag: $0) }
+                summaries.map { TelegramEngine.EngineData.Item.Messages.MessageCount(peerId: peerId, threadId: chatLocation.threadId, tag: $0) }
             ))
             |> map { summaries -> (ContentType, [MessageTags: Int32]) in
                 var result: [MessageTags: Int32] = [:]
@@ -2172,8 +2252,13 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
         self.contentTypePromise.set(contentType)
 
         self.itemGrid.hideScrollingArea()
+        
+        var threadId: Int64?
+        if case let .replyThread(message) = chatLocation {
+            threadId = Int64(message.messageId.id)
+        }
 
-        self.listSource = self.context.engine.messages.sparseMessageList(peerId: self.peerId, tag: tagMaskForType(self.contentType))
+        self.listSource = self.context.engine.messages.sparseMessageList(peerId: self.peerId, threadId: threadId, tag: tagMaskForType(self.contentType))
         self.isRequestingView = false
         self.requestHistoryAroundVisiblePosition(synchronous: true, reloadAtTop: true)
     }
@@ -2292,6 +2377,8 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
             if let item = itemLayer.item {
                 if self.itemInteraction.hiddenMedia[item.message.id] != nil {
                     itemLayer.isHidden = true
+                    itemLayer.updateHasSpoiler(hasSpoiler: false)
+                    self.itemGridBinding.revealedSpoilerMessageIds.insert(item.message.id)
                 } else {
                     itemLayer.isHidden = false
                 }
@@ -2359,6 +2446,172 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
         self.itemGrid.addToTransitionSurface(view: view)
     }
     
+    private var gridSelectionGesture: MediaPickerGridSelectionGesture<EngineMessage.Id>?
+    private var listSelectionGesture: MediaListSelectionRecognizer?
+    
+    override func didLoad() {
+        super.didLoad()
+        
+        let selectionRecognizer = MediaListSelectionRecognizer(target: self, action: #selector(self.selectionPanGesture(_:)))
+        selectionRecognizer.shouldBegin = {
+            return true
+        }
+        self.view.addGestureRecognizer(selectionRecognizer)
+    }
+    
+    private var selectionPanState: (selecting: Bool, initialMessageId: EngineMessage.Id, toggledMessageIds: [[EngineMessage.Id]])?
+    private var selectionScrollActivationTimer: SwiftSignalKit.Timer?
+    private var selectionScrollDisplayLink: ConstantDisplayLinkAnimator?
+    private var selectionScrollDelta: CGFloat?
+    private var selectionLastLocation: CGPoint?
+    
+    private func messageAtPoint(_ location: CGPoint) -> EngineMessage? {
+        if let itemView = self.itemGrid.item(at: location)?.view as? ItemView, let message = itemView.item?.message {
+            return EngineMessage(message)
+        }
+        return nil
+    }
+    
+    @objc private func selectionPanGesture(_ recognizer: UIGestureRecognizer) -> Void {
+        let location = recognizer.location(in: self.view)
+        switch recognizer.state {
+            case .began:
+                if let message = self.messageAtPoint(location) {
+                    let selecting = !(self.chatControllerInteraction.selectionState?.selectedIds.contains(message.id) ?? false)
+                    self.selectionPanState = (selecting, message.id, [])
+                    self.chatControllerInteraction.toggleMessagesSelection([message.id], selecting)
+                }
+            case .changed:
+                self.handlePanSelection(location: location)
+                self.selectionLastLocation = location
+            case .ended, .failed, .cancelled:
+                self.selectionPanState = nil
+                self.selectionScrollDisplayLink = nil
+                self.selectionScrollActivationTimer?.invalidate()
+                self.selectionScrollActivationTimer = nil
+                self.selectionScrollDelta = nil
+                self.selectionLastLocation = nil
+                self.selectionScrollSkipUpdate = false
+            case .possible:
+                break
+            @unknown default:
+                fatalError()
+        }
+    }
+    
+    private func handlePanSelection(location: CGPoint) {
+        var location = location
+        if location.y < 0.0 {
+            location.y = 5.0
+        } else if location.y > self.frame.height {
+            location.y = self.frame.height - 5.0
+        }
+        
+        var hasState = false
+        if let state = self.selectionPanState {
+            hasState = true
+            if let message = self.messageAtPoint(location) {
+                if message.id == state.initialMessageId {
+                    if !state.toggledMessageIds.isEmpty {
+                        self.chatControllerInteraction.toggleMessagesSelection(state.toggledMessageIds.flatMap { $0.compactMap({ $0 }) }, !state.selecting)
+                        self.selectionPanState = (state.selecting, state.initialMessageId, [])
+                    }
+                } else if state.toggledMessageIds.last?.first != message.id {
+                    var updatedToggledMessageIds: [[EngineMessage.Id]] = []
+                    var previouslyToggled = false
+                    for i in (0 ..< state.toggledMessageIds.count) {
+                        if let messageId = state.toggledMessageIds[i].first {
+                            if messageId == message.id {
+                                previouslyToggled = true
+                                updatedToggledMessageIds = Array(state.toggledMessageIds.prefix(i + 1))
+                                
+                                let messageIdsToToggle = Array(state.toggledMessageIds.suffix(state.toggledMessageIds.count - i - 1)).flatMap { $0 }
+                                self.chatControllerInteraction.toggleMessagesSelection(messageIdsToToggle, !state.selecting)
+                                break
+                            }
+                        }
+                    }
+                    
+                    if !previouslyToggled {
+                        updatedToggledMessageIds = state.toggledMessageIds
+                        let isSelected = self.chatControllerInteraction.selectionState?.selectedIds.contains(message.id) ?? false
+                        if state.selecting != isSelected {
+                            updatedToggledMessageIds.append([message.id])
+                            self.chatControllerInteraction.toggleMessagesSelection([message.id], state.selecting)
+                        }
+                    }
+                    
+                    self.selectionPanState = (state.selecting, state.initialMessageId, updatedToggledMessageIds)
+                }
+            }
+        }
+        guard hasState else {
+            return
+        }
+        let scrollingAreaHeight: CGFloat = 50.0
+        if location.y < scrollingAreaHeight || location.y > self.frame.height - scrollingAreaHeight {
+            if location.y < self.frame.height / 2.0 {
+                self.selectionScrollDelta = (scrollingAreaHeight - location.y) / scrollingAreaHeight
+            } else {
+                self.selectionScrollDelta = -(scrollingAreaHeight - min(scrollingAreaHeight, max(0.0, (self.frame.height - location.y)))) / scrollingAreaHeight
+            }
+            if let displayLink = self.selectionScrollDisplayLink {
+                displayLink.isPaused = false
+            } else {
+                if let _ = self.selectionScrollActivationTimer {
+                } else {
+                    let timer = SwiftSignalKit.Timer(timeout: 0.45, repeat: false, completion: { [weak self] in
+                        self?.setupSelectionScrolling()
+                    }, queue: .mainQueue())
+                    timer.start()
+                    self.selectionScrollActivationTimer = timer
+                }
+            }
+        } else {
+            self.selectionScrollDisplayLink?.isPaused = true
+            self.selectionScrollActivationTimer?.invalidate()
+            self.selectionScrollActivationTimer = nil
+        }
+    }
+    
+    private var selectionScrollSkipUpdate = false
+    private func setupSelectionScrolling() {
+        self.selectionScrollDisplayLink = ConstantDisplayLinkAnimator(update: { [weak self] in
+            self?.selectionScrollActivationTimer = nil
+            if let strongSelf = self, let delta = strongSelf.selectionScrollDelta {
+                let distance: CGFloat = 15.0 * min(1.0, 0.15 + abs(delta * delta))
+                let direction: ListViewScrollDirection = delta > 0.0 ? .up : .down
+                let _ = strongSelf.itemGrid.scrollWithDelta(direction == .up ? -distance : distance)
+                
+                if let location = strongSelf.selectionLastLocation {
+                    if !strongSelf.selectionScrollSkipUpdate {
+                        strongSelf.handlePanSelection(location: location)
+                    }
+                    strongSelf.selectionScrollSkipUpdate = !strongSelf.selectionScrollSkipUpdate
+                }
+            }
+        })
+        self.selectionScrollDisplayLink?.isPaused = false
+    }
+    
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        let location = gestureRecognizer.location(in: gestureRecognizer.view)
+        if location.x < 44.0 {
+            return false
+        }
+        return true
+    }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer.state != .failed, let otherGestureRecognizer = otherGestureRecognizer as? UIPanGestureRecognizer {
+            otherGestureRecognizer.isEnabled = false
+            otherGestureRecognizer.isEnabled = true
+            return true
+        } else {
+            return false
+        }
+    }
+    
     func updateSelectedMessages(animated: Bool) {
         switch self.contentType {
         case .files, .music, .voiceAndVideoMessages:
@@ -2387,7 +2640,36 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
                 itemLayer.updateSelection(theme: self.itemGridBinding.checkNodeTheme, isSelected: self.chatControllerInteraction.selectionState?.selectedIds.contains(item.message.id), animated: animated)
             }
 
-            self.itemGrid.pinchEnabled = self.chatControllerInteraction.selectionState == nil
+            let isSelecting = self.chatControllerInteraction.selectionState != nil
+            self.itemGrid.pinchEnabled = !isSelecting
+            
+            if isSelecting {
+                if self.gridSelectionGesture == nil {
+                    let selectionGesture = MediaPickerGridSelectionGesture<EngineMessage.Id>()
+                    selectionGesture.delegate = self
+                    selectionGesture.sideInset = 44.0
+                    selectionGesture.updateIsScrollEnabled = { [weak self] isEnabled in
+                        self?.itemGrid.isScrollEnabled = isEnabled
+                    }
+                    selectionGesture.itemAt = { [weak self] point in
+                        if let strongSelf = self, let itemLayer = strongSelf.itemGrid.item(at: point)?.layer as? ItemLayer, let messageId = itemLayer.item?.message.id {
+                            return (messageId, strongSelf.chatControllerInteraction.selectionState?.selectedIds.contains(messageId) ?? false)
+                        } else {
+                            return nil
+                        }
+                    }
+                    selectionGesture.updateSelection = { [weak self] messageId, selected in
+                        if let strongSelf = self {
+                            strongSelf.chatControllerInteraction.toggleMessagesSelection([messageId], selected)
+                        }
+                    }
+                    self.itemGrid.view.addGestureRecognizer(selectionGesture)
+                    self.gridSelectionGesture = selectionGesture
+                }
+            } else if let gridSelectionGesture = self.gridSelectionGesture {
+                self.itemGrid.view.removeGestureRecognizer(gridSelectionGesture)
+                self.gridSelectionGesture = nil
+            }
         }
     }
     
@@ -2435,7 +2717,8 @@ final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScro
                     peers: SimpleDictionary<PeerId, Peer>(),
                     associatedMessages: SimpleDictionary<MessageId, Message>(),
                     associatedMessageIds: [],
-                    associatedMedia: [:]
+                    associatedMedia: [:],
+                    associatedThreadInfo: nil
                 )
                 let messageItem = ListMessageItem(
                     presentationData: self.itemGridBinding.chatPresentationData,
@@ -2577,5 +2860,67 @@ func updateVisualMediaStoredState(engine: TelegramEngine, peerId: PeerId, messag
         return engine.itemCache.put(collectionId: ApplicationSpecificItemCacheCollectionId.visualMediaStoredState, id: key, item: state)
     } else {
         return engine.itemCache.remove(collectionId: ApplicationSpecificItemCacheCollectionId.visualMediaStoredState, id: key)
+    }
+}
+
+private class MediaListSelectionRecognizer: UIPanGestureRecognizer {
+    private let selectionGestureActivationThreshold: CGFloat = 5.0
+    
+    var recognized: Bool? = nil
+    var initialLocation: CGPoint = CGPoint()
+    
+    public var shouldBegin: (() -> Bool)?
+    
+    public override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        
+        self.minimumNumberOfTouches = 2
+        self.maximumNumberOfTouches = 2
+    }
+    
+    public override func reset() {
+        super.reset()
+        
+        self.recognized = nil
+    }
+    
+    public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        
+        if let shouldBegin = self.shouldBegin, !shouldBegin() {
+            self.state = .failed
+        } else {
+            let touch = touches.first!
+            self.initialLocation = touch.location(in: self.view)
+        }
+    }
+    
+    public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        let location = touches.first!.location(in: self.view)
+        let translation = location.offsetBy(dx: -self.initialLocation.x, dy: -self.initialLocation.y)
+        
+        let touchesArray = Array(touches)
+        if self.recognized == nil, touchesArray.count == 2 {
+            if let firstTouch = touchesArray.first, let secondTouch = touchesArray.last {
+                let firstLocation = firstTouch.location(in: self.view)
+                let secondLocation = secondTouch.location(in: self.view)
+                
+                func distance(_ v1: CGPoint, _ v2: CGPoint) -> CGFloat {
+                    let dx = v1.x - v2.x
+                    let dy = v1.y - v2.y
+                    return sqrt(dx * dx + dy * dy)
+                }
+                if distance(firstLocation, secondLocation) > 200.0 {
+                    self.state = .failed
+                }
+            }
+            if self.state != .failed && (abs(translation.y) >= selectionGestureActivationThreshold) {
+                self.recognized = true
+            }
+        }
+        
+        if let recognized = self.recognized, recognized {
+            super.touchesMoved(touches, with: event)
+        }
     }
 }

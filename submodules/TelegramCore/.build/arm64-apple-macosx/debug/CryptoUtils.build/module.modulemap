@@ -1,0 +1,4 @@
+module CryptoUtils {
+    umbrella "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/CryptoUtils/PublicHeaders"
+    export *
+}

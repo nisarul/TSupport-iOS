@@ -9,6 +9,8 @@ import LocalizedPeerData
 import ContextUI
 import ChatListUI
 import TelegramPresentationData
+import SwiftSignalKit
+import ChatControllerInteraction
 
 struct ChatMessageItemWidthFill {
     var compactInset: CGFloat
@@ -84,7 +86,7 @@ struct ChatMessageItemLayoutConstants {
     }
     
     fileprivate static var compact: ChatMessageItemLayoutConstants {
-        let bubble = ChatMessageItemBubbleLayoutConstants(edgeInset: 4.0, defaultSpacing: 2.0 + UIScreenPixel, mergedSpacing: 1.0, maximumWidthFill: ChatMessageItemWidthFill(compactInset: 36.0, compactWidthBoundary: 500.0, freeMaximumFillFactor: 0.85), minimumSize: CGSize(width: 40.0, height: 35.0), contentInsets: UIEdgeInsets(top: 0.0, left: 6.0, bottom: 0.0, right: 0.0), borderInset: UIScreenPixel, strokeInsets: UIEdgeInsets(top: 1.0, left: 1.0, bottom: 1.0, right: 1.0))
+        let bubble = ChatMessageItemBubbleLayoutConstants(edgeInset: 4.0, defaultSpacing: 2.0 + UIScreenPixel, mergedSpacing: 0.0, maximumWidthFill: ChatMessageItemWidthFill(compactInset: 36.0, compactWidthBoundary: 500.0, freeMaximumFillFactor: 0.85), minimumSize: CGSize(width: 40.0, height: 35.0), contentInsets: UIEdgeInsets(top: 0.0, left: 6.0, bottom: 0.0, right: 0.0), borderInset: UIScreenPixel, strokeInsets: UIEdgeInsets(top: 1.0, left: 1.0, bottom: 1.0, right: 1.0))
         let text = ChatMessageItemTextLayoutConstants(bubbleInsets: UIEdgeInsets(top: 6.0 + UIScreenPixel, left: 12.0, bottom: 6.0 - UIScreenPixel, right: 12.0))
         let image = ChatMessageItemImageLayoutConstants(bubbleInsets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0), statusInsets: UIEdgeInsets(top: 0.0, left: 0.0, bottom: 6.0, right: 6.0), defaultCornerRadius: 16.0, mergedCornerRadius: 8.0, contentMergedCornerRadius: 0.0, maxDimensions: CGSize(width: 300.0, height: 380.0), minDimensions: CGSize(width: 170.0, height: 74.0))
         let video = ChatMessageItemVideoLayoutConstants(maxHorizontalHeight: 250.0, maxVerticalHeight: 360.0)
@@ -96,7 +98,7 @@ struct ChatMessageItemLayoutConstants {
     }
     
     fileprivate static var regular: ChatMessageItemLayoutConstants {
-        let bubble = ChatMessageItemBubbleLayoutConstants(edgeInset: 4.0, defaultSpacing: 2.0 + UIScreenPixel, mergedSpacing: 1.0, maximumWidthFill: ChatMessageItemWidthFill(compactInset: 36.0, compactWidthBoundary: 500.0, freeMaximumFillFactor: 0.65), minimumSize: CGSize(width: 40.0, height: 35.0), contentInsets: UIEdgeInsets(top: 0.0, left: 6.0, bottom: 0.0, right: 0.0), borderInset: UIScreenPixel, strokeInsets: UIEdgeInsets(top: 1.0, left: 1.0, bottom: 1.0, right: 1.0))
+        let bubble = ChatMessageItemBubbleLayoutConstants(edgeInset: 4.0, defaultSpacing: 2.0 + UIScreenPixel, mergedSpacing: 0.0, maximumWidthFill: ChatMessageItemWidthFill(compactInset: 36.0, compactWidthBoundary: 500.0, freeMaximumFillFactor: 0.65), minimumSize: CGSize(width: 40.0, height: 35.0), contentInsets: UIEdgeInsets(top: 0.0, left: 6.0, bottom: 0.0, right: 0.0), borderInset: UIScreenPixel, strokeInsets: UIEdgeInsets(top: 1.0, left: 1.0, bottom: 1.0, right: 1.0))
         let text = ChatMessageItemTextLayoutConstants(bubbleInsets: UIEdgeInsets(top: 6.0 + UIScreenPixel, left: 12.0, bottom: 6.0 - UIScreenPixel, right: 12.0))
         let image = ChatMessageItemImageLayoutConstants(bubbleInsets: UIEdgeInsets(top: 2.0, left: 2.0, bottom: 2.0, right: 2.0), statusInsets: UIEdgeInsets(top: 0.0, left: 0.0, bottom: 6.0, right: 6.0), defaultCornerRadius: 16.0, mergedCornerRadius: 8.0, contentMergedCornerRadius: 5.0, maxDimensions: CGSize(width: 440.0, height: 440.0), minDimensions: CGSize(width: 170.0, height: 74.0))
         let video = ChatMessageItemVideoLayoutConstants(maxHorizontalHeight: 250.0, maxVerticalHeight: 360.0)
@@ -125,7 +127,7 @@ func chatMessageItemLayoutConstants(_ constants: (ChatMessageItemLayoutConstants
     let textInset: CGFloat = min(maxInset, ceil(maxInset * radiusTransition + minInset * (1.0 - radiusTransition)))
     result.text.bubbleInsets.left = textInset
     result.text.bubbleInsets.right = textInset
-    result.instantVideo.dimensions = min(params.width, params.availableHeight) > 320.0 ? constants.1.instantVideo.dimensions : constants.0.instantVideo.dimensions
+    result.instantVideo.dimensions = params.width > 320.0 ? constants.1.instantVideo.dimensions : constants.0.instantVideo.dimensions
     return result
 }
 
@@ -206,12 +208,13 @@ final class ChatMessageAccessibilityData {
             if let chatPeer = message.peers[item.message.id.peerId] {
                 let authorName = message.author.flatMap(EnginePeer.init)?.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 
-                let (_, _, messageText, _, _) = chatListItemStrings(strings: item.presentationData.strings, nameDisplayOrder: item.presentationData.nameDisplayOrder, dateTimeFormat: item.presentationData.dateTimeFormat, messages: [EngineMessage(message)], chatPeer: EngineRenderedPeer(peer: EnginePeer(chatPeer)), accountPeerId: item.context.account.peerId)
+                let (_, _, messageText, _, _) = chatListItemStrings(strings: item.presentationData.strings, nameDisplayOrder: item.presentationData.nameDisplayOrder, dateTimeFormat: item.presentationData.dateTimeFormat, contentSettings: item.context.currentContentSettings.with { $0 }, messages: [EngineMessage(message)], chatPeer: EngineRenderedPeer(peer: EnginePeer(chatPeer)), accountPeerId: item.context.account.peerId)
                 
                 var text = messageText
                 
                 loop: for media in message.media {
                     if let _ = media as? TelegramMediaImage {
+                        traits.insert(.image)
                         if isIncoming {
                             if announceIncomingAuthors, let authorName = authorName {
                                 label = item.presentationData.strings.VoiceOver_Chat_PhotoFrom(authorName).string
@@ -229,6 +232,9 @@ final class ChatMessageAccessibilityData {
                         }
                     } else if let file = media as? TelegramMediaFile {
                         var isSpecialFile = false
+                        
+                        let isVideo = file.isInstantVideo
+                        
                         for attribute in file.attributes {
                             switch attribute {
                                 case let .Sticker(displayText, _, _):
@@ -256,6 +262,9 @@ final class ChatMessageAccessibilityData {
                                         }
                                     }
                                 case let .Audio(isVoice, duration, title, performer, _):
+                                    if isVideo {
+                                        continue
+                                    }
                                     isSpecialFile = true
                                     if isSelected == nil {
                                         hint = item.presentationData.strings.VoiceOver_Chat_PlayHint
@@ -541,12 +550,37 @@ final class ChatMessageAccessibilityData {
                 let dateString = DateFormatter.localizedString(from: Date(timeIntervalSince1970: Double(message.timestamp)), dateStyle: .medium, timeStyle: .short)
                 
                 result += "\n\(dateString)"
-                if !isIncoming && item.read && !isReply {
+                if !isIncoming && !isReply {
                     result += "\n"
-                    if announceIncomingAuthors {
-                        result += item.presentationData.strings.VoiceOver_Chat_SeenByRecipients
+                    if item.sending {
+                        result += item.presentationData.strings.VoiceOver_Chat_Sending
+                    } else if item.failed {
+                        result += item.presentationData.strings.VoiceOver_Chat_Failed
                     } else {
-                        result += item.presentationData.strings.VoiceOver_Chat_SeenByRecipient
+                        if item.read {
+                            if announceIncomingAuthors {
+                                result += item.presentationData.strings.VoiceOver_Chat_SeenByRecipients
+                            } else {
+                                result += item.presentationData.strings.VoiceOver_Chat_SeenByRecipient
+                            }
+                        }
+                        for attribute in message.attributes {
+                            if let attribute = attribute as? ConsumableContentMessageAttribute {
+                                if !attribute.consumed {
+                                    if announceIncomingAuthors {
+                                        result += item.presentationData.strings.VoiceOver_Chat_NotPlayedByRecipients
+                                    } else {
+                                        result += item.presentationData.strings.VoiceOver_Chat_NotPlayedByRecipient
+                                    }
+                                } else {
+                                    if announceIncomingAuthors {
+                                        result += item.presentationData.strings.VoiceOver_Chat_PlayedByRecipients
+                                    } else {
+                                        result += item.presentationData.strings.VoiceOver_Chat_PlayedByRecipient
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 value = result
@@ -570,6 +604,7 @@ final class ChatMessageAccessibilityData {
         }
         
         var (label, value) = dataForMessage(item.message, false)
+        var replyValue: String?
         
         for attribute in item.message.attributes {
             if let attribute = attribute as? TextEntitiesMessageAttribute {
@@ -610,8 +645,8 @@ final class ChatMessageAccessibilityData {
                     replyLabel = item.presentationData.strings.VoiceOver_Chat_ReplyToYourMessage
                 }
                 
-//                let (replyMessageLabel, replyMessageValue) = dataForMessage(replyMessage, true)
-//                replyLabel += "\(replyLabel): \(replyMessageLabel), \(replyMessageValue)"
+                let (_, replyMessageValue) = dataForMessage(replyMessage, true)
+                replyValue = replyMessageValue
                 
                 label = "\(replyLabel) . \(label)"
             }
@@ -663,6 +698,10 @@ final class ChatMessageAccessibilityData {
             customActions.append(ChatMessageAccessibilityCustomAction(name: item.presentationData.strings.VoiceOver_MessageContextOpenMessageMenu, target: nil, selector: #selector(self.noop), action: .options))
         }
         
+        if let replyValue {
+            value = "\(value). \(item.presentationData.strings.VoiceOver_Chat_ReplyingToMessage(replyValue).string)"
+        }
+        
         self.label = label
         self.value = value
         self.hint = hint
@@ -682,7 +721,7 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
     var accessibilityData: ChatMessageAccessibilityData?
     var safeInsets = UIEdgeInsets()
     
-    var awaitingAppliedReaction: (String?, () -> Void)?
+    var awaitingAppliedReaction: (MessageReaction.Reaction?, () -> Void)?
     
     public required convenience init() {
         self.init(layerBacked: false)
@@ -808,7 +847,11 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
                 case .text:
                     item.controllerInteraction.sendMessage(button.title)
                 case let .url(url):
-                    item.controllerInteraction.openUrl(url, true, nil, nil)
+                    var concealed = true
+                    if url.hasPrefix("tg://") {
+                        concealed = false
+                    }
+                    item.controllerInteraction.openUrl(url, concealed, nil, nil)
                 case .requestMap:
                     item.controllerInteraction.shareCurrentLocation()
                 case .requestPhone:
@@ -817,7 +860,7 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
                     item.controllerInteraction.requestMessageActionCallback(item.message.id, nil, true, false)
                 case let .callback(requiresPassword, data):
                     item.controllerInteraction.requestMessageActionCallback(item.message.id, data, false, requiresPassword)
-                case let .switchInline(samePeer, query):
+                case let .switchInline(samePeer, query, peerTypes):
                     var botPeer: Peer?
                     
                     var found = false
@@ -838,7 +881,7 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
                         peerId = item.message.id.peerId
                     }
                     if let botPeer = botPeer, let addressName = botPeer.addressName {
-                        item.controllerInteraction.activateSwitchInline(peerId, "@\(addressName) \(query)")
+                        item.controllerInteraction.activateSwitchInline(peerId, "@\(addressName) \(query)", peerTypes)
                     }
                 case .payment:
                     item.controllerInteraction.openCheckoutOrReceipt(item.message.id)
@@ -847,9 +890,16 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
                 case .setupPoll:
                     break
                 case let .openUserProfile(peerId):
-                    item.controllerInteraction.openPeer(peerId, .info, nil, nil)
+                    let _ = (item.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+                    |> deliverOnMainQueue).start(next: { peer in
+                        if let peer = peer {
+                            item.controllerInteraction.openPeer(peer, .info, nil, .default)
+                        }
+                    })
                 case let .openWebView(url, simple):
-                    item.controllerInteraction.openWebView(button.title, url, simple, false)
+                    item.controllerInteraction.openWebView(button.title, url, simple, .generic)
+                case .requestPeer:
+                    break
             }
         }
     }
@@ -868,7 +918,7 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
     func openMessageContextMenu() {
     }
     
-    public func targetReactionView(value: String) -> UIView? {
+    public func targetReactionView(value: MessageReaction.Reaction) -> UIView? {
         return nil
     }
     
@@ -900,5 +950,9 @@ public class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol 
     }
     
     func unreadMessageRangeUpdated() {
+    }
+    
+    public func contentFrame() -> CGRect {
+        return self.bounds
     }
 }

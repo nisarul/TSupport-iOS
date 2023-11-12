@@ -7,6 +7,7 @@ import Display
 import AsyncDisplayKit
 import UniversalMediaPlayer
 import TelegramPresentationData
+import TextFormat
 
 public enum ChatControllerInteractionOpenMessageMode {
     case `default`
@@ -37,12 +38,14 @@ public final class OpenChatMessageParams {
     public let callPeer: (PeerId, Bool) -> Void
     public let enqueueMessage: (EnqueueMessage) -> Void
     public let sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?
+    public let sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?
     public let setupTemporaryHiddenMedia: (Signal<Any?, NoError>, Int, Media) -> Void
     public let chatAvatarHiddenMedia: (Signal<MessageId?, NoError>, Media) -> Void
     public let actionInteraction: GalleryControllerActionInteraction?
     public let playlistLocation: PeerMessagesPlaylistLocation?
     public let gallerySource: GalleryControllerItemSource?
     public let centralItemUpdated: ((MessageId) -> Void)?
+    public let getSourceRect: (() -> CGRect?)?
     
     public init(
         context: AccountContext,
@@ -64,12 +67,14 @@ public final class OpenChatMessageParams {
         callPeer: @escaping (PeerId, Bool) -> Void,
         enqueueMessage: @escaping (EnqueueMessage) -> Void,
         sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?,
+        sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?,
         setupTemporaryHiddenMedia: @escaping (Signal<Any?, NoError>, Int, Media) -> Void,
         chatAvatarHiddenMedia: @escaping (Signal<MessageId?, NoError>, Media) -> Void,
         actionInteraction: GalleryControllerActionInteraction? = nil,
         playlistLocation: PeerMessagesPlaylistLocation? = nil,
         gallerySource: GalleryControllerItemSource? = nil,
-        centralItemUpdated: ((MessageId) -> Void)? = nil
+        centralItemUpdated: ((MessageId) -> Void)? = nil,
+        getSourceRect: (() -> CGRect?)? = nil
     ) {
         self.context = context
         self.updatedPresentationData = updatedPresentationData
@@ -90,11 +95,13 @@ public final class OpenChatMessageParams {
         self.callPeer = callPeer
         self.enqueueMessage = enqueueMessage
         self.sendSticker = sendSticker
+        self.sendEmoji = sendEmoji
         self.setupTemporaryHiddenMedia = setupTemporaryHiddenMedia
         self.chatAvatarHiddenMedia = chatAvatarHiddenMedia
         self.actionInteraction = actionInteraction
         self.playlistLocation = playlistLocation
         self.gallerySource = gallerySource
         self.centralItemUpdated = centralItemUpdated
+        self.getSourceRect = getSourceRect
     }
 }

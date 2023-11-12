@@ -86,7 +86,7 @@ final class ForwardAccessoryPanelNode: AccessoryPanelNode {
     let messageIds: [MessageId]
     private var messages: [Message] = []
     private var authors: String?
-    private var sourcePeer: (isPersonal: Bool, displayTitle: String)?
+    private var sourcePeer: (peerId: PeerId, displayTitle: String)?
     
     let closeButton: HighlightableButtonNode
     let lineNode: ASImageNode
@@ -172,7 +172,7 @@ final class ForwardAccessoryPanelNode: AccessoryPanelNode {
                     var uniquePeerIds = Set<PeerId>()
                     var title = ""
                     var text = NSMutableAttributedString(string: "")
-                    var sourcePeer: (Bool, String)?
+                    var sourcePeer: (PeerId, String)?
                     for message in messages {
                         if let author = message.forwardInfo?.author ?? message.effectiveAuthor, !uniquePeerIds.contains(author.id) {
                             uniquePeerIds.insert(author.id)
@@ -186,7 +186,7 @@ final class ForwardAccessoryPanelNode: AccessoryPanelNode {
                             }
                         }
                         if let peer = message.peers[message.id.peerId] {
-                            sourcePeer = (peer.id.namespace == Namespaces.Peer.CloudUser, EnginePeer(peer).displayTitle(strings: strongSelf.strings, displayOrder: strongSelf.nameDisplayOrder))
+                            sourcePeer = (peer.id, EnginePeer(peer).displayTitle(strings: strongSelf.strings, displayOrder: strongSelf.nameDisplayOrder))
                         }
                     }
                     
@@ -202,7 +202,7 @@ final class ForwardAccessoryPanelNode: AccessoryPanelNode {
                             case let .CustomEmoji(_, fileId):
                                 let range = NSRange(location: entity.range.lowerBound, length: entity.range.upperBound - entity.range.lowerBound)
                                 if range.lowerBound >= 0 && range.upperBound <= additionalText.length {
-                                    additionalText.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(stickerPack: nil, fileId: fileId, file: messages[0].associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: range)
+                                    additionalText.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: fileId, file: messages[0].associatedMedia[MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)] as? TelegramMediaFile), range: range)
                                 }
                             default:
                                 break
@@ -361,13 +361,20 @@ final class ForwardAccessoryPanelNode: AccessoryPanelNode {
     }
     
     @objc func closePressed() {
-        guard let (isPersonal, peerDisplayTitle) = self.sourcePeer else {
+        guard let (peerId, peerDisplayTitle) = self.sourcePeer else {
             return
         }
         let messageCount = Int32(self.messageIds.count)
         let messages = self.strings.Conversation_ForwardOptions_Messages(messageCount)
-        let string = isPersonal ? self.strings.Conversation_ForwardOptions_TextPersonal(messages, peerDisplayTitle) : self.strings.Conversation_ForwardOptions_Text(messages, peerDisplayTitle)
-        
+        let string: PresentationStrings.FormattedString
+        if peerId == self.context.account.peerId {
+            string = self.strings.Conversation_ForwardOptions_TextSaved(messages)
+        } else if peerId.namespace == Namespaces.Peer.CloudUser {
+            string = self.strings.Conversation_ForwardOptions_TextPersonal(messages, peerDisplayTitle)
+        } else {
+            string = self.strings.Conversation_ForwardOptions_Text(messages, peerDisplayTitle)
+        }
+
         let font = Font.regular(floor(self.fontSize.baseDisplaySize * 15.0 / 17.0))
         let boldFont = Font.semibold(floor(self.fontSize.baseDisplaySize * 15.0 / 17.0))
         let body = MarkdownAttributeSet(font: font, textColor: self.theme.actionSheet.secondaryTextColor)

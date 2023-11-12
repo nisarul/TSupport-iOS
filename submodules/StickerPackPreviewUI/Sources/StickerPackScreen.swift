@@ -21,6 +21,7 @@ import PresentationDataUtils
 import StickerPeekUI
 import AnimationCache
 import MultiAnimationRenderer
+import Pasteboard
 
 private enum StickerPackPreviewGridEntry: Comparable, Identifiable {
     case sticker(index: Int, stableId: Int, stickerItem: StickerPackItem?, isEmpty: Bool, isPremium: Bool, isLocked: Bool)
@@ -51,7 +52,7 @@ private enum StickerPackPreviewGridEntry: Comparable, Identifiable {
     func item(context: AccountContext, interaction: StickerPackPreviewInteraction, theme: PresentationTheme, strings: PresentationStrings, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer) -> GridItem {
         switch self {
             case let .sticker(_, _, stickerItem, isEmpty, isPremium, isLocked):
-                return StickerPackPreviewGridItem(account: context.account, stickerItem: stickerItem, interaction: interaction, theme: theme, isPremium: isPremium, isLocked: isLocked, isEmpty: isEmpty)
+                return StickerPackPreviewGridItem(context: context, stickerItem: stickerItem, interaction: interaction, theme: theme, isPremium: isPremium, isLocked: isLocked, isEmpty: isEmpty)
             case let .emojis(_, _, info, items, title, isInstalled):
                 return StickerPackEmojisItem(context: context, animationCache: animationCache, animationRenderer: animationRenderer, interaction: interaction, info: info, items: items, theme: theme, strings: strings, title: title, isInstalled: isInstalled, isEmpty: false)
         }
@@ -65,7 +66,7 @@ private struct StickerPackPreviewGridTransaction {
     let scrollToItem: GridNodeScrollToItem?
     
     init(previousList: [StickerPackPreviewGridEntry], list: [StickerPackPreviewGridEntry], context: AccountContext, interaction: StickerPackPreviewInteraction, theme: PresentationTheme, strings: PresentationStrings, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, scrollToItem: GridNodeScrollToItem?) {
-         let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: previousList, rightList: list)
+        let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: previousList, rightList: list)
         
         self.deletions = deleteIndices
         self.insertions = indicesAndItems.map { GridNodeInsertItem(index: $0.0, item: $0.1.item(context: context, interaction: interaction, theme: theme, strings: strings, animationCache: animationCache, animationRenderer: animationRenderer), previousIndex: $0.2) }
@@ -96,6 +97,7 @@ private final class StickerPackContainer: ASDisplayNode {
     private let requestDismiss: () -> Void
     private let presentInGlobalOverlay: (ViewController, Any?) -> Void
     private let sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?
+    private let sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?
     private let backgroundNode: ASImageNode
     private let gridNode: GridNode
     private let actionAreaBackgroundNode: NavigationBackgroundNode
@@ -145,7 +147,22 @@ private final class StickerPackContainer: ASDisplayNode {
     var onReady: () -> Void = {}
     var onError: () -> Void = {}
     
-    init(index: Int, context: AccountContext, presentationData: PresentationData, stickerPacks: [StickerPackReference], decideNextAction: @escaping (StickerPackContainer, StickerPackAction) -> StickerPackNextAction, requestDismiss: @escaping () -> Void, expandProgressUpdated: @escaping (StickerPackContainer, ContainedViewLayoutTransition, ContainedViewLayoutTransition) -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?, openMention: @escaping (String) -> Void, controller: StickerPackScreenImpl?) {
+    init(
+        index: Int,
+        context: AccountContext,
+        presentationData: PresentationData,
+        stickerPacks: [StickerPackReference],
+        loadedStickerPacks: [LoadedStickerPack],
+        decideNextAction: @escaping (StickerPackContainer, StickerPackAction) -> StickerPackNextAction,
+        requestDismiss: @escaping () -> Void,
+        expandProgressUpdated: @escaping (StickerPackContainer, ContainedViewLayoutTransition, ContainedViewLayoutTransition) -> Void,
+        presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void,
+        sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?,
+        sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?,
+        longPressEmoji: ((String, ChatTextInputTextCustomEmojiAttribute, ASDisplayNode, CGRect) -> Void)?,
+        openMention: @escaping (String) -> Void,
+        controller: StickerPackScreenImpl?)
+    {
         self.index = index
         self.context = context
         self.controller = controller
@@ -156,6 +173,7 @@ private final class StickerPackContainer: ASDisplayNode {
         self.presentInGlobalOverlay = presentInGlobalOverlay
         self.expandProgressUpdated = expandProgressUpdated
         self.sendSticker = sendSticker
+        self.sendEmoji = sendEmoji
         
         self.backgroundNode = ASImageNode()
         self.backgroundNode.displaysAsynchronously = true
@@ -201,10 +219,16 @@ private final class StickerPackContainer: ASDisplayNode {
         
         var addStickerPackImpl: ((StickerPackCollectionInfo, [StickerPackItem]) -> Void)?
         var removeStickerPackImpl: ((StickerPackCollectionInfo) -> Void)?
+        var emojiSelectedImpl: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?
+        var emojiLongPressedImpl: ((String, ChatTextInputTextCustomEmojiAttribute, ASDisplayNode, CGRect) -> Void)?
         self.interaction = StickerPackPreviewInteraction(playAnimatedStickers: true, addStickerPack: { info, items in
             addStickerPackImpl?(info, items)
         }, removeStickerPack: { info in
             removeStickerPackImpl?(info)
+        }, emojiSelected: { text, attribute in
+            emojiSelectedImpl?(text, attribute)
+        }, emojiLongPressed: { text, attribute, node, frame in
+            emojiLongPressedImpl?(text, attribute, node, frame)
         })
         
         super.init()
@@ -215,7 +239,6 @@ private final class StickerPackContainer: ASDisplayNode {
         self.addSubnode(self.actionAreaSeparatorNode)
         self.addSubnode(self.buttonNode)
         
-//        self.addSubnode(self.titleBackgroundnode)
         self.titleContainer.addSubnode(self.titleNode)
         self.addSubnode(self.titleContainer)
         self.addSubnode(self.titleSeparatorNode)
@@ -232,9 +255,11 @@ private final class StickerPackContainer: ASDisplayNode {
             guard let strongSelf = self, !strongSelf.isDismissed else {
                 return
             }
+            if let (layout, _, _, _) = strongSelf.validLayout, case .regular = layout.metrics.widthClass {
+                return
+            }
             let contentOffset = strongSelf.gridNode.scrollView.contentOffset
             let insets = strongSelf.gridNode.scrollView.contentInset
-            
             if contentOffset.y <= -insets.top - 30.0 {
                 strongSelf.isDismissed = true
                 DispatchQueue.main.async {
@@ -323,11 +348,18 @@ private final class StickerPackContainer: ASDisplayNode {
             return updatedOffset
         }
         
-        let loadedStickerPacks = combineLatest(stickerPacks.map {
-            context.engine.stickers.loadedStickerPack(reference: $0, forceActualized: true)
+        
+        
+        let fetchedStickerPacks: Signal<[LoadedStickerPack], NoError> = combineLatest(stickerPacks.map { packReference in
+            for pack in loadedStickerPacks {
+                if case let .result(info, _, _) = pack, case let .id(id, _) = packReference, info.id.id == id {
+                    return .single(pack)
+                }
+            }
+            return context.engine.stickers.loadedStickerPack(reference: packReference, forceActualized: true)
         })
         
-        self.itemsDisposable = combineLatest(queue: Queue.mainQueue(), loadedStickerPacks, context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))).start(next: { [weak self] contents, peer in
+        self.itemsDisposable = combineLatest(queue: Queue.mainQueue(), fetchedStickerPacks, context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))).start(next: { [weak self] contents, peer in
             guard let strongSelf = self else {
                 return
             }
@@ -360,7 +392,7 @@ private final class StickerPackContainer: ASDisplayNode {
             }
         }
         
-        self.titleNode.linkHighlightColor = self.presentationData.theme.actionSheet.controlAccentColor.withAlphaComponent(0.5)
+        self.titleNode.linkHighlightColor = self.presentationData.theme.actionSheet.controlAccentColor.withAlphaComponent(0.2)
         
         addStickerPackImpl = { [weak self] info, items in
             guard let strongSelf = self else {
@@ -394,6 +426,14 @@ private final class StickerPackContainer: ASDisplayNode {
                 
                 let _ = strongSelf.context.engine.stickers.removeStickerPackInteractively(id: info.id, option: .delete).start()
             }
+        }
+        
+        emojiSelectedImpl = { text, attribute in
+            sendEmoji?(text, attribute)
+        }
+        
+        emojiLongPressedImpl = { text, attribute, node, frame in
+            longPressEmoji?(text, attribute, node, frame)
         }
     }
     
@@ -445,7 +485,7 @@ private final class StickerPackContainer: ASDisplayNode {
                                     }
                                 })))
                             }
-                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(account: strongSelf.context.account, theme: strongSelf.presentationData.theme, strings: strongSelf.presentationData.strings, item: .pack(item.file), isLocked: item.file.isPremiumSticker && !hasPremium, menu: menuItems, openPremiumIntro: { [weak self] in
+                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(context: strongSelf.context, theme: strongSelf.presentationData.theme, strings: strongSelf.presentationData.strings, item: .pack(item.file), isLocked: item.file.isPremiumSticker && !hasPremium, menu: menuItems, openPremiumIntro: { [weak self] in
                                 guard let strongSelf = self else {
                                     return
                                 }
@@ -458,6 +498,8 @@ private final class StickerPackContainer: ASDisplayNode {
                             return nil
                         }
                     }
+                } else if let itemNode = strongSelf.gridNode.itemNodeAtPoint(point) as? StickerPackEmojisItemNode, let targetItem = itemNode.targetItem(at: strongSelf.gridNode.view.convert(point, to: itemNode.view)) {
+                    return strongSelf.emojiSuggestionPeekContent(itemLayer: targetItem.1, file: targetItem.0)
                 }
             }
             return nil
@@ -485,6 +527,191 @@ private final class StickerPackContainer: ASDisplayNode {
                 strongSelf.updatePreviewingItem(item: item, animated: true)
             }
         }, activateBySingleTap: true))
+    }
+    
+    private func emojiSuggestionPeekContent(itemLayer: CALayer, file: TelegramMediaFile) -> Signal<(UIView, CGRect, PeekControllerContent)?, NoError> {
+        let context = self.context
+        
+        var collectionId: ItemCollectionId?
+        for attribute in file.attributes {
+            if case let .CustomEmoji(_, _, _, packReference) = attribute {
+                switch packReference {
+                case let .id(id, _):
+                    collectionId = ItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
+                default:
+                    break
+                }
+            }
+        }
+        
+        var bubbleUpEmojiOrStickersets: [ItemCollectionId] = []
+        if let collectionId {
+            bubbleUpEmojiOrStickersets.append(collectionId)
+        }
+        
+        let accountPeerId = context.account.peerId
+        
+        return context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: accountPeerId))
+        |> map { peer -> Bool in
+            var hasPremium = false
+            if case let .user(user) = peer, user.isPremium {
+                hasPremium = true
+            }
+            return hasPremium
+        }
+        |> deliverOnMainQueue
+        |> map { [weak self, weak itemLayer] hasPremium -> (UIView, CGRect, PeekControllerContent)? in
+            guard let strongSelf = self, let itemLayer = itemLayer else {
+                return nil
+            }
+            
+            var menuItems: [ContextMenuItem] = []
+            menuItems.removeAll()
+            
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            
+            var isLocked = false
+            if !hasPremium {
+                isLocked = file.isPremiumEmoji
+                /*if isLocked && chatPeerId == context.account.peerId {
+                    isLocked = false
+                }*/
+            }
+            
+            let sendEmoji: (TelegramMediaFile) -> Void = { file in
+                guard let self else {
+                    return
+                }
+                var text = "."
+                var emojiAttribute: ChatTextInputTextCustomEmojiAttribute?
+                loop: for attribute in file.attributes {
+                    switch attribute {
+                    case let .CustomEmoji(_, _, displayText, stickerPackReference):
+                        text = displayText
+                        
+                        var packId: ItemCollectionId?
+                        if case let .id(id, _) = stickerPackReference {
+                            packId = ItemCollectionId(namespace: Namespaces.ItemCollection.CloudEmojiPacks, id: id)
+                        }
+                        emojiAttribute = ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: packId, fileId: file.fileId.id, file: file)
+                        break loop
+                    default:
+                        break
+                    }
+                }
+                
+                if let emojiAttribute {
+                    self.sendEmoji?(text, emojiAttribute)
+                }
+            }
+            let setStatus: (TelegramMediaFile) -> Void = { file in
+                guard let self else {
+                    return
+                }
+                guard let controller = self.controller else {
+                    return
+                }
+                
+                let context = self.context
+                
+                let _ = context.engine.accountData.setEmojiStatus(file: file, expirationDate: nil).start()
+                
+                var animateInAsReplacement = false
+                animateInAsReplacement = false
+                                            
+                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                
+                let undoController = UndoOverlayController(presentationData: presentationData, content: .sticker(context: context, file: file, title: nil, text: presentationData.strings.EmojiStatus_AppliedText, undoText: nil, customAction: nil), elevatedLayout: false, animateInAsReplacement: animateInAsReplacement, action: { _ in return false })
+                controller.present(undoController, in: .window(.root))
+            }
+            let copyEmoji: (TelegramMediaFile) -> Void = { file in
+                var text = "."
+                var emojiAttribute: ChatTextInputTextCustomEmojiAttribute?
+                loop: for attribute in file.attributes {
+                    switch attribute {
+                    case let .CustomEmoji(_, _, displayText, _):
+                        text = displayText
+                        
+                        emojiAttribute = ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: file.fileId.id, file: file)
+                        break loop
+                    default:
+                        break
+                    }
+                }
+                
+                if let _ = emojiAttribute {
+                    storeMessageTextInPasteboard(text, entities: [MessageTextEntity(range: 0 ..< (text as NSString).length, type: .CustomEmoji(stickerPack: nil, fileId: file.fileId.id))])
+                }
+            }
+            
+            if strongSelf.sendEmoji != nil {
+                menuItems.append(.action(ContextMenuActionItem(text: presentationData.strings.EmojiPreview_SendEmoji, icon: { theme in
+                    if let image = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) {
+                        return generateImage(image.size, rotatedContext: { size, context in
+                            context.clear(CGRect(origin: CGPoint(), size: size))
+                            
+                            if let cgImage = image.cgImage {
+                                context.draw(cgImage, in: CGRect(origin: CGPoint(), size: size))
+                            }
+                        })
+                    } else {
+                        return nil
+                    }
+                }, action: { _, f in
+                    sendEmoji(file)
+                    f(.default)
+                })))
+            }
+            
+            menuItems.append(.action(ContextMenuActionItem(text: presentationData.strings.EmojiPreview_SetAsStatus, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Smile"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                f(.default)
+                
+                guard let strongSelf = self else {
+                    return
+                }
+                
+                if hasPremium {
+                    setStatus(file)
+                } else {
+                    var replaceImpl: ((ViewController) -> Void)?
+                    let controller = PremiumDemoScreen(context: context, subject: .animatedEmoji, action: {
+                        let controller = PremiumIntroScreen(context: context, source: .animatedEmoji)
+                        replaceImpl?(controller)
+                    })
+                    replaceImpl = { [weak controller] c in
+                        controller?.replace(with: c)
+                    }
+                    strongSelf.controller?.push(controller)
+                }
+            })))
+            
+            menuItems.append(.action(ContextMenuActionItem(text: presentationData.strings.EmojiPreview_CopyEmoji, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                copyEmoji(file)
+                f(.default)
+            })))
+            
+            if menuItems.isEmpty {
+                return nil
+            }
+            
+            let content = StickerPreviewPeekContent(context: context, theme: presentationData.theme, strings: presentationData.strings, item: .pack(file), isLocked: isLocked, menu: menuItems, openPremiumIntro: { [weak self] in
+                guard let self else {
+                    return
+                }
+                guard let controller = self.controller else {
+                    return
+                }
+                
+                let premiumController = PremiumIntroScreen(context: context, source: .stickers)
+                controller.push(premiumController)
+            })
+            
+            return (strongSelf.view, itemLayer.convert(itemLayer.bounds, to: strongSelf.view.layer), content)
+        }
     }
     
     func updatePresentationData(_ presentationData: PresentationData) {
@@ -593,7 +820,7 @@ private final class StickerPackContainer: ASDisplayNode {
             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Link"), color: theme.contextMenu.primaryColor)
         }, action: {  [weak self] _, f in
             f(.default)
-            
+        
             UIPasteboard.general.string = text
             
             if let strongSelf = self {
@@ -691,14 +918,29 @@ private final class StickerPackContainer: ASDisplayNode {
         
         let backgroundAlpha: CGFloat
         switch offset {
-            case let .known(value):
-                let bottomOffsetY = max(0.0, self.gridNode.scrollView.contentSize.height + self.gridNode.scrollView.contentInset.top + self.gridNode.scrollView.contentInset.bottom - value - self.gridNode.scrollView.frame.height - 10.0)
-                backgroundAlpha = min(10.0, bottomOffsetY) / 10.0
+            case .known:
+                let topPosition = self.view.convert(self.topContainerNode.frame, to: self.view).minY
+                let bottomPosition = self.actionAreaBackgroundNode.view.convert(self.actionAreaBackgroundNode.bounds, to: self.view).minY
+                let bottomEdgePosition = topPosition + self.topContainerNode.frame.height + self.gridNode.scrollView.contentSize.height
+                let bottomOffset = bottomPosition - bottomEdgePosition
+
+                backgroundAlpha = min(10.0, max(0.0, -1.0 * bottomOffset)) / 10.0
             case .unknown, .none:
                 backgroundAlpha = 1.0
         }
-        self.actionAreaBackgroundNode.alpha = backgroundAlpha
-        self.actionAreaSeparatorNode.alpha = backgroundAlpha
+        
+        let transition: ContainedViewLayoutTransition
+        var delay: Double = 0.0
+        if backgroundAlpha >= self.actionAreaBackgroundNode.alpha || abs(backgroundAlpha - self.actionAreaBackgroundNode.alpha) < 0.01 {
+            transition = .immediate
+        } else {
+            transition = .animated(duration: 0.2, curve: .linear)
+            if abs(backgroundAlpha - self.actionAreaBackgroundNode.alpha) > 0.9 {
+                delay = 0.2
+            }
+        }
+        transition.updateAlpha(node: self.actionAreaBackgroundNode, alpha: backgroundAlpha, delay: delay)
+        transition.updateAlpha(node: self.actionAreaSeparatorNode, alpha: backgroundAlpha, delay: delay)
     }
     
     private func updateStickerPackContents(_ contents: [LoadedStickerPack], hasPremium: Bool) {
@@ -963,7 +1205,9 @@ private final class StickerPackContainer: ASDisplayNode {
     
     func updateLayout(layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
         var insets = layout.insets(options: [.statusBar])
-        if case .compact = layout.metrics.widthClass, layout.size.width > layout.size.height {
+        if case .regular = layout.metrics.widthClass {
+            insets.top = 0.0
+        } else if case .compact = layout.metrics.widthClass, layout.size.width > layout.size.height {
             insets.top = 0.0
         } else {
             insets.top += 10.0
@@ -1013,13 +1257,13 @@ private final class StickerPackContainer: ASDisplayNode {
         if !self.currentStickerPacks.isEmpty {
             var packsHeight = 0.0
             for stickerPack in currentStickerPacks {
-                let layout = ItemLayout(width: fillingWidth, itemsCount: stickerPack.1.count, hasTitle: true)
-                packsHeight += layout.height
+                let layout = ItemLayout(width: fillingWidth, itemsCount: stickerPack.1.count)
+                packsHeight += layout.height + 61.0
             }
             contentHeight = packsHeight + 8.0
         } else if let (info, items, _) = self.currentStickerPack {
             if info.id.namespace == Namespaces.ItemCollection.CloudEmojiPacks {
-                let layout = ItemLayout(width: fillingWidth, itemsCount: items.count, hasTitle: false)
+                let layout = ItemLayout(width: fillingWidth, itemsCount: items.count)
                 contentHeight = layout.height
             } else {
                 let rowCount = items.count / itemsPerRow + ((items.count % itemsPerRow) == 0 ? 0 : 1)
@@ -1031,11 +1275,14 @@ private final class StickerPackContainer: ASDisplayNode {
         
         let initialRevealedRowCount: CGFloat = 4.5
         
-        let topInset = max(0.0, layout.size.height - floor(initialRevealedRowCount * itemWidth) - insets.top - actionAreaHeight - titleAreaInset)
-        
+        let topInset: CGFloat
+        if case .regular = layout.metrics.widthClass {
+            topInset = 0.0
+        } else {
+            topInset = insets.top + max(0.0, layout.size.height - floor(initialRevealedRowCount * itemWidth) - insets.top - actionAreaHeight - titleAreaInset)
+        }
         let additionalGridBottomInset = max(0.0, gridFrame.size.height - actionAreaHeight - contentHeight)
-        
-        let gridInsets = UIEdgeInsets(top: insets.top + topInset, left: gridLeftInset, bottom: actionAreaHeight + additionalGridBottomInset, right: layout.size.width - fillingWidth - gridLeftInset)
+        let gridInsets = UIEdgeInsets(top: topInset, left: gridLeftInset, bottom: actionAreaHeight + additionalGridBottomInset, right: layout.size.width - fillingWidth - gridLeftInset)
         
         let firstTime = self.validLayout == nil
         self.validLayout = (layout, gridFrame, titleAreaInset, gridInsets)
@@ -1114,9 +1361,16 @@ private final class StickerPackContainer: ASDisplayNode {
             self.titleSeparatorNode.layer.removeAllAnimations()
         }
         
-        let backgroundFrame = CGRect(origin: CGPoint(x: 0.0, y: max(minBackgroundY, unclippedBackgroundY)), size: CGSize(width: layout.size.width, height: layout.size.height))
+        var backgroundFrame = CGRect(origin: CGPoint(x: 0.0, y: max(minBackgroundY, unclippedBackgroundY)), size: CGSize(width: layout.size.width, height: layout.size.height))
+        var titleContainerFrame: CGRect
+        if case .regular = layout.metrics.widthClass {
+            backgroundFrame.origin.y = min(0.0, backgroundFrame.origin.y)
+            titleContainerFrame = CGRect(origin: CGPoint(x: backgroundFrame.minX + floor((backgroundFrame.width) / 2.0), y: floor((56.0) / 2.0)), size: CGSize())
+        } else {
+            titleContainerFrame = CGRect(origin: CGPoint(x: backgroundFrame.minX + floor((backgroundFrame.width) / 2.0), y: backgroundFrame.minY + floor((56.0) / 2.0)), size: CGSize())
+        }
         transition.updateFrame(node: self.backgroundNode, frame: backgroundFrame)
-        transition.updateFrame(node: self.titleContainer, frame: CGRect(origin: CGPoint(x: backgroundFrame.minX + floor((backgroundFrame.width) / 2.0), y: backgroundFrame.minY + floor((56.0) / 2.0)), size: CGSize()))
+        transition.updateFrame(node: self.titleContainer, frame: titleContainerFrame)
         transition.updateFrame(node: self.titleSeparatorNode, frame: CGRect(origin: CGPoint(x: backgroundFrame.minX, y: backgroundFrame.minY + 56.0 - UIScreenPixel), size: CGSize(width: backgroundFrame.width, height: UIScreenPixel)))
         transition.updateFrame(node: self.titleBackgroundnode, frame: CGRect(origin: CGPoint(x: backgroundFrame.minX, y: backgroundFrame.minY), size: CGSize(width: backgroundFrame.width, height: 56.0)))
         self.titleBackgroundnode.update(size: CGSize(width: layout.size.width, height: 56.0), transition: .immediate)
@@ -1182,9 +1436,13 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
     private let dismissed: () -> Void
     private let presentInGlobalOverlay: (ViewController, Any?) -> Void
     private let sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?
+    private let sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?
+    private let longPressEmoji: ((String, ChatTextInputTextCustomEmojiAttribute, ASDisplayNode, CGRect) -> Void)?
     private let openMention: (String) -> Void
     
     private let dimNode: ASDisplayNode
+    private let shadowNode: ASImageNode
+    private let arrowNode: ASImageNode
     private let containerContainingNode: ASDisplayNode
     
     private var containers: [Int: StickerPackContainer] = [:]
@@ -1203,7 +1461,19 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
     var onReady: () -> Void = {}
     var onError: () -> Void = {}
     
-    init(context: AccountContext, controller: StickerPackScreenImpl, stickerPacks: [StickerPackReference], initialSelectedStickerPackIndex: Int, modalProgressUpdated: @escaping (CGFloat, ContainedViewLayoutTransition) -> Void, dismissed: @escaping () -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?, openMention: @escaping (String) -> Void) {
+    init(
+        context: AccountContext,
+        controller: StickerPackScreenImpl,
+        stickerPacks: [StickerPackReference],
+        initialSelectedStickerPackIndex: Int,
+        modalProgressUpdated: @escaping (CGFloat, ContainedViewLayoutTransition) -> Void,
+        dismissed: @escaping () -> Void,
+        presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void,
+        sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?,
+        sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?,
+        longPressEmoji: ((String, ChatTextInputTextCustomEmojiAttribute, ASDisplayNode, CGRect) -> Void)?,
+        openMention: @escaping (String) -> Void)
+    {
         self.context = context
         self.controller = controller
         self.presentationData = controller.presentationData
@@ -1213,18 +1483,31 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
         self.dismissed = dismissed
         self.presentInGlobalOverlay = presentInGlobalOverlay
         self.sendSticker = sendSticker
+        self.sendEmoji = sendEmoji
+        self.longPressEmoji = longPressEmoji
         self.openMention = openMention
         
         self.dimNode = ASDisplayNode()
         self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.25)
         self.dimNode.alpha = 0.0
         
+        self.shadowNode = ASImageNode()
+        self.shadowNode.displaysAsynchronously = false
+        self.shadowNode.isUserInteractionEnabled = false
+        
+        self.arrowNode = ASImageNode()
+        self.arrowNode.displaysAsynchronously = false
+        self.arrowNode.isUserInteractionEnabled = false
+        self.arrowNode.image = generateArrowImage(color: self.presentationData.theme.actionSheet.opaqueItemBackgroundColor)
+        
         self.containerContainingNode = ASDisplayNode()
+        self.containerContainingNode.clipsToBounds = true
         
         super.init()
         
         self.addSubnode(self.dimNode)
-        
+        self.addSubnode(self.shadowNode)
+        self.addSubnode(self.arrowNode)
         self.addSubnode(self.containerContainingNode)
     }
     
@@ -1238,6 +1521,7 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
         for (_, container) in self.containers {
             container.updatePresentationData(presentationData)
         }
+        self.arrowNode.image = generateArrowImage(color: presentationData.theme.actionSheet.opaqueItemBackgroundColor)
     }
     
     func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
@@ -1246,10 +1530,65 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
         self.validLayout = layout
         
         transition.updateFrame(node: self.dimNode, frame: CGRect(origin: CGPoint(), size: layout.size))
-        transition.updateFrame(node: self.containerContainingNode, frame: CGRect(origin: CGPoint(), size: layout.size))
+       
+        let containerContainingFrame: CGRect
+        let containerInsets: UIEdgeInsets
+        if case .regular = layout.metrics.widthClass {
+            self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.01)
+            self.containerContainingNode.cornerRadius = 10.0
+            
+            let size = CGSize(width: 390.0, height: min(560.0, layout.size.height - 60.0))
+            var contentRect: CGRect
+            if let sourceRect = self.controller?.getSourceRect?() {
+                let sideSpacing: CGFloat = 10.0
+                let margin: CGFloat = 64.0
+                contentRect = CGRect(origin: CGPoint(x: sourceRect.maxX + sideSpacing, y: floor(sourceRect.midY - size.height / 2.0)), size: size)
+                contentRect.origin.y = min(layout.size.height - margin - size.height - layout.intrinsicInsets.bottom, max(margin, contentRect.origin.y))
+                
+                let arrowSize = CGSize(width: 23.0, height: 12.0)
+                let arrowFrame: CGRect
+                if contentRect.maxX > layout.size.width {
+                    contentRect.origin.x = sourceRect.minX - size.width - sideSpacing
+                    arrowFrame = CGRect(origin: CGPoint(x: contentRect.maxX - (arrowSize.width - arrowSize.height) / 2.0, y: floor(sourceRect.midY - arrowSize.height / 2.0)), size: arrowSize)
+                    self.arrowNode.transform = CATransform3DMakeRotation(-.pi / 2.0, 0.0, 0.0, 1.0)
+                } else {
+                    arrowFrame = CGRect(origin: CGPoint(x: contentRect.minX - arrowSize.width + (arrowSize.width - arrowSize.height) / 2.0, y: floor(sourceRect.midY - arrowSize.height / 2.0)), size: arrowSize)
+                    self.arrowNode.transform = CATransform3DMakeRotation(.pi / 2.0, 0.0, 0.0, 1.0)
+                }
+                
+                self.arrowNode.frame = arrowFrame
+                self.arrowNode.isHidden = false
+    
+            } else {
+                let masterWidth = min(max(320.0, floor(layout.size.width / 3.0)), floor(layout.size.width / 2.0))
+                let detailWidth = layout.size.width - masterWidth
+                contentRect = CGRect(origin:  CGPoint(x: masterWidth + floor((detailWidth - size.width) / 2.0), y: floor((layout.size.height - size.height) / 2.0)), size: size)
+                self.arrowNode.isHidden = true
+            }
+            
+            containerContainingFrame = contentRect
+            containerInsets = .zero
+            
+            self.shadowNode.alpha = 1.0
+            if self.shadowNode.image == nil {
+                self.shadowNode.image = generateShadowImage()
+            }
+        } else {
+            self.containerContainingNode.cornerRadius = 0.0
+            
+            self.dimNode.backgroundColor = UIColor(white: 0.0, alpha: 0.25)
+            containerContainingFrame = CGRect(origin: CGPoint(), size: layout.size)
+            containerInsets = layout.intrinsicInsets
+            
+            self.arrowNode.isHidden = true
+            self.shadowNode.alpha = 0.0
+        }
+        transition.updateFrame(node: self.containerContainingNode, frame: containerContainingFrame)
+        
+        let shadowFrame = containerContainingFrame.insetBy(dx: -60.0, dy: -60.0)
+        transition.updateFrame(node: self.shadowNode, frame: shadowFrame)
         
         let expandProgress: CGFloat = 1.0
-
         let scaledInset: CGFloat = 12.0
         let scaledDistance: CGFloat = 4.0
         let minScale = (layout.size.width - scaledInset * 2.0) / layout.size.width
@@ -1273,7 +1612,7 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
                 wasAdded = true
                 containerTransition = .immediate
                 let index = i
-                container = StickerPackContainer(index: index, context: context, presentationData: self.presentationData, stickerPacks: self.stickerPacks, decideNextAction: { [weak self] container, action in
+                container = StickerPackContainer(index: index, context: self.context, presentationData: self.presentationData, stickerPacks: self.stickerPacks, loadedStickerPacks: self.controller?.loadedStickerPacks ?? [], decideNextAction: { [weak self] container, action in
                     guard let strongSelf = self, let layout = strongSelf.validLayout else {
                         return .dismiss
                     }
@@ -1323,7 +1662,7 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
                             }
                         }
                     }
-                }, presentInGlobalOverlay: presentInGlobalOverlay, sendSticker: sendSticker, openMention: openMention, controller: self.controller)
+                }, presentInGlobalOverlay: presentInGlobalOverlay, sendSticker: self.sendSticker, sendEmoji: self.sendEmoji, longPressEmoji: self.longPressEmoji, openMention: self.openMention, controller: self.controller)
                 container.onReady = { [weak self] in
                     self?.onReady()
                 }
@@ -1337,11 +1676,15 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
                 self.containers[i] = container
             }
             
-            let containerFrame = CGRect(origin: CGPoint(x: CGFloat(indexOffset) * layout.size.width + self.relativeToSelectedStickerPackTransition + scaledOffset, y: containerVerticalOffset), size: layout.size)
+            let containerFrame = CGRect(origin: CGPoint(x: CGFloat(indexOffset) * containerContainingFrame.size.width + self.relativeToSelectedStickerPackTransition + scaledOffset, y: containerVerticalOffset), size: containerContainingFrame.size)
             containerTransition.updateFrame(node: container, frame: containerFrame, beginWithCurrentState: true)
             containerTransition.updateSublayerTransformScaleAndOffset(node: container, scale: containerScale, offset: CGPoint(), beginWithCurrentState: true)
+            var containerLayout = layout
+            containerLayout.size = containerFrame.size
+            containerLayout.intrinsicInsets = containerInsets
+            
             if container.validLayout?.0 != layout {
-                container.updateLayout(layout: layout, transition: containerTransition)
+                container.updateLayout(layout: containerLayout, transition: containerTransition)
             }
             
             if wasAdded {
@@ -1424,23 +1767,40 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
     }
     
     func animateIn() {
+        guard let layout = self.validLayout else {
+            return
+        }
         self.dimNode.alpha = 1.0
         self.dimNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.3)
         
-        let minInset: CGFloat = (self.containers.map { (_, container) -> CGFloat in container.topContentInset }).max() ?? 0.0
-        self.containerContainingNode.layer.animatePosition(from: CGPoint(x: 0.0, y: self.containerContainingNode.bounds.height - minInset), to: CGPoint(), duration: 0.5, timingFunction: kCAMediaTimingFunctionSpring, additive: true)
+        if case .regular = layout.metrics.widthClass {
+            
+        } else {
+            let minInset: CGFloat = (self.containers.map { (_, container) -> CGFloat in container.topContentInset }).max() ?? 0.0
+            self.containerContainingNode.layer.animatePosition(from: CGPoint(x: 0.0, y: self.containerContainingNode.bounds.height - minInset), to: CGPoint(), duration: 0.5, timingFunction: kCAMediaTimingFunctionSpring, additive: true)
+        }
     }
     
     func animateOut(completion: @escaping () -> Void) {
+        guard let layout = self.validLayout else {
+            return
+        }
         self.dimNode.alpha = 0.0
         self.dimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2)
         
-        let minInset: CGFloat = (self.containers.map { (_, container) -> CGFloat in container.topContentInset }).max() ?? 0.0
-        self.containerContainingNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: 0.0, y: self.containerContainingNode.bounds.height - minInset), duration: 0.2, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false, additive: true, completion: { _ in
-            completion()
-        })
-        
-        self.modalProgressUpdated(0.0, .animated(duration: 0.2, curve: .easeInOut))
+        if case .regular = layout.metrics.widthClass {
+            self.layer.allowsGroupOpacity = true
+            self.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3, removeOnCompletion: false, completion: { _ in
+                completion()
+            })
+        } else {
+            let minInset: CGFloat = (self.containers.map { (_, container) -> CGFloat in container.topContentInset }).max() ?? 0.0
+            self.containerContainingNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: 0.0, y: self.containerContainingNode.bounds.height - minInset), duration: 0.2, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false, additive: true, completion: { _ in
+                completion()
+            })
+            
+            self.modalProgressUpdated(0.0, .animated(duration: 0.2, curve: .easeInOut))
+        }
     }
     
     func dismiss() {
@@ -1508,12 +1868,16 @@ private final class StickerPackScreenNode: ViewControllerTracingNode {
 public final class StickerPackScreenImpl: ViewController {
     private let context: AccountContext
     fileprivate var presentationData: PresentationData
+    private let updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?
     private var presentationDataDisposable: Disposable?
     
     private let stickerPacks: [StickerPackReference]
+    fileprivate let loadedStickerPacks: [LoadedStickerPack]
+    
     private let initialSelectedStickerPackIndex: Int
     fileprivate weak var parentNavigationController: NavigationController?
     private let sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?
+    private let sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?
     
     private var controllerNode: StickerPackScreenNode {
         return self.displayNode as! StickerPackScreenNode
@@ -1521,6 +1885,8 @@ public final class StickerPackScreenImpl: ViewController {
     
     public var dismissed: (() -> Void)?
     public var actionPerformed: (([(StickerPackCollectionInfo, [StickerPackItem], StickerPackScreenPerformedAction)]) -> Void)?
+    
+    public var getSourceRect: (() -> CGRect?)?
     
     private let _ready = Promise<Bool>()
     override public var ready: Promise<Bool> {
@@ -1535,27 +1901,30 @@ public final class StickerPackScreenImpl: ViewController {
     let animationCache: AnimationCache
     let animationRenderer: MultiAnimationRenderer
     
-    public init(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, stickerPacks: [StickerPackReference], selectedStickerPackIndex: Int = 0, parentNavigationController: NavigationController? = nil, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)? = nil, actionPerformed: (([(StickerPackCollectionInfo, [StickerPackItem], StickerPackScreenPerformedAction)]) -> Void)? = nil) {
+    public init(
+        context: AccountContext,
+        updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil,
+        stickerPacks: [StickerPackReference],
+        loadedStickerPacks: [LoadedStickerPack],
+        selectedStickerPackIndex: Int = 0,
+        parentNavigationController: NavigationController? = nil,
+        sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)? = nil,
+        sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)?,
+        actionPerformed: (([(StickerPackCollectionInfo, [StickerPackItem], StickerPackScreenPerformedAction)]) -> Void)? = nil
+    ) {
         self.context = context
         self.presentationData = updatedPresentationData?.initial ?? context.sharedContext.currentPresentationData.with { $0 }
+        self.updatedPresentationData = updatedPresentationData
         self.stickerPacks = stickerPacks
+        self.loadedStickerPacks = loadedStickerPacks
         self.initialSelectedStickerPackIndex = selectedStickerPackIndex
         self.parentNavigationController = parentNavigationController
         self.sendSticker = sendSticker
+        self.sendEmoji = sendEmoji
         self.actionPerformed = actionPerformed
-        
-        self.animationCache = AnimationCacheImpl(basePath: context.account.postbox.mediaBox.basePath + "/animation-cache", allocateTempFile: {
-            return TempBox.shared.tempFile(fileName: "file").path
-        })
-        
-        let animationRenderer: MultiAnimationRenderer
-        /*if #available(iOS 13.0, *) {
-            animationRenderer = MultiAnimationMetalRendererImpl()
-        } else {*/
-            animationRenderer = MultiAnimationRendererImpl()
-        //}
-        
-        self.animationRenderer = animationRenderer
+
+        self.animationCache = context.animationCache
+        self.animationRenderer = context.animationRenderer
         
         super.init(navigationBarPresentationData: nil)
         
@@ -1601,6 +1970,46 @@ public final class StickerPackScreenImpl: ViewController {
                     return false
                 }
             }
+        }, sendEmoji: self.sendEmoji.flatMap { [weak self] sendEmoji in
+            return { text, attribute in
+                sendEmoji(text, attribute)
+                self?.controllerNode.dismiss()
+            }
+        }, longPressEmoji: { [weak self] text, attribute, node, frame in
+            guard let strongSelf = self else {
+                return
+            }
+            
+            var actions: [ContextMenuAction] = []
+
+            actions.append(ContextMenuAction(content: .text(title: strongSelf.presentationData.strings.Conversation_ContextMenuCopy, accessibilityLabel: strongSelf.presentationData.strings.Conversation_ContextMenuCopy), action: { [weak self] in
+                storeMessageTextInPasteboard(
+                    text,
+                    entities: [
+                        MessageTextEntity(
+                            range: 0 ..< (text as NSString).length,
+                            type: .CustomEmoji(
+                                stickerPack: nil,
+                                fileId: attribute.fileId
+                            )
+                        )
+                    ]
+                )
+                
+                if let strongSelf = self, let file = attribute.file {
+                    let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
+                    strongSelf.present(UndoOverlayController(presentationData: presentationData, content: .sticker(context: strongSelf.context, file: file, title: nil, text: presentationData.strings.Conversation_EmojiCopied, undoText: nil, customAction: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+                }
+            }))
+            
+            let contextMenuController = ContextMenuController(actions: actions)
+            strongSelf.present(contextMenuController, in: .window(.root), with: ContextMenuControllerPresentationArguments(sourceNodeAndRect: { [weak self] in
+                if let strongSelf = self {
+                    return (node, frame.insetBy(dx: -40.0, dy: 0.0), strongSelf.controllerNode, strongSelf.controllerNode.view.bounds)
+                } else {
+                    return nil
+                }
+            }))
         }, openMention: { [weak self] mention in
             guard let strongSelf = self else {
                 return
@@ -1618,9 +2027,13 @@ public final class StickerPackScreenImpl: ViewController {
                 guard let strongSelf = self else {
                     return
                 }
-                if let peer = peer, let parentNavigationController = strongSelf.parentNavigationController {
-                    strongSelf.dismiss()
-                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: parentNavigationController, context: strongSelf.context, chatLocation: .peer(id: peer.id), animated: true))
+                if let peer {
+                    if let parentNavigationController = strongSelf.parentNavigationController {
+                        strongSelf.dismiss()
+                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: parentNavigationController, context: strongSelf.context, chatLocation: .peer(EnginePeer(peer)), animated: true))
+                    }
+                } else {
+                    strongSelf.present(textAlertController(context: strongSelf.context, updatedPresentationData: strongSelf.updatedPresentationData, title: nil, text: strongSelf.presentationData.strings.Resolve_ErrorNotFound, actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
                 }
             }))
         })
@@ -1702,9 +2115,17 @@ public final class StickerPackScreenImpl: ViewController {
         }
     }
     
+    private var validLayout: ContainerViewLayout?
     override public func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        let previousSize = self.validLayout?.size
         super.containerLayoutUpdated(layout, transition: transition)
         
+        self.validLayout = layout
+        if let previousSize, previousSize != layout.size {
+            Queue.mainQueue().after(0.1) {
+                self.controllerNode.containerLayoutUpdated(layout, transition: transition)
+            }
+        }
         self.controllerNode.containerLayoutUpdated(layout, transition: transition)
     }
 }
@@ -1714,16 +2135,33 @@ public enum StickerPackScreenPerformedAction {
     case remove(positionInList: Int)
 }
 
-public func StickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, mode: StickerPackPreviewControllerMode = .default, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], parentNavigationController: NavigationController? = nil, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)? = nil, actionPerformed: (([(StickerPackCollectionInfo, [StickerPackItem], StickerPackScreenPerformedAction)]) -> Void)? = nil, dismissed: (() -> Void)? = nil) -> ViewController {
-    //let stickerPacks = [mainStickerPack]
-    let controller = StickerPackScreenImpl(context: context, stickerPacks: stickerPacks, selectedStickerPackIndex: stickerPacks.firstIndex(of: mainStickerPack) ?? 0, parentNavigationController: parentNavigationController, sendSticker: sendSticker, actionPerformed: actionPerformed)
+public func StickerPackScreen(
+    context: AccountContext,
+    updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil,
+    mode: StickerPackPreviewControllerMode = .default,
+    mainStickerPack: StickerPackReference,
+    stickerPacks: [StickerPackReference],
+    loadedStickerPacks: [LoadedStickerPack] = [],
+    parentNavigationController: NavigationController? = nil,
+    sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)? = nil,
+    sendEmoji: ((String, ChatTextInputTextCustomEmojiAttribute) -> Void)? = nil,
+    actionPerformed: (([(StickerPackCollectionInfo, [StickerPackItem], StickerPackScreenPerformedAction)]) -> Void)? = nil,
+    dismissed: (() -> Void)? = nil,
+    getSourceRect: (() -> CGRect?)? = nil
+) -> ViewController {
+    let controller = StickerPackScreenImpl(
+        context: context,
+        stickerPacks: stickerPacks,
+        loadedStickerPacks: loadedStickerPacks,
+        selectedStickerPackIndex: stickerPacks.firstIndex(of: mainStickerPack) ?? 0,
+        parentNavigationController: parentNavigationController,
+        sendSticker: sendSticker,
+        sendEmoji: sendEmoji,
+        actionPerformed: actionPerformed
+    )
     controller.dismissed = dismissed
+    controller.getSourceRect = getSourceRect
     return controller
-    
-//    let controller = StickerPackPreviewController(context: context, updatedPresentationData: updatedPresentationData, stickerPack: mainStickerPack, mode: mode, parentNavigationController: parentNavigationController, actionPerformed: actionPerformed)
-//    controller.dismissed = dismissed
-//    controller.sendSticker = sendSticker
-//    return controller
 }
 
 
@@ -1739,4 +2177,35 @@ private final class StickerPackContextReferenceContentSource: ContextReferenceCo
     func transitionInfo() -> ContextControllerReferenceViewInfo? {
         return ContextControllerReferenceViewInfo(referenceView: self.sourceNode.view, contentAreaInScreenSpace: UIScreen.main.bounds)
     }
+}
+
+
+private func generateShadowImage() -> UIImage? {
+    return generateImage(CGSize(width: 140.0, height: 140.0), rotatedContext: { size, context in
+        context.clear(CGRect(origin: CGPoint(), size: size))
+        
+        context.saveGState()
+        context.setShadow(offset: CGSize(), blur: 60.0, color: UIColor(white: 0.0, alpha: 0.4).cgColor)
+        let path = UIBezierPath(roundedRect: CGRect(x: 60.0, y: 60.0, width: 20.0, height: 20.0), cornerRadius: 10.0).cgPath
+        context.addPath(path)
+        context.fillPath()
+        
+        context.restoreGState()
+        
+        context.setBlendMode(.clear)
+        context.addPath(path)
+        context.fillPath()
+    })?.stretchableImage(withLeftCapWidth: 70, topCapHeight: 70)
+}
+
+private func generateArrowImage(color: UIColor) -> UIImage? {
+    return generateImage(CGSize(width: 23.0, height: 12.0), rotatedContext: { size, context in
+        context.clear(CGRect(origin: CGPoint(), size: size))
+      
+        context.setFillColor(color.cgColor)
+    
+        context.translateBy(x: -183.0, y: -209.0)
+        
+        try? drawSvgPath(context, path: "M183.219,208.89 H206.781 C205.648,208.89 204.567,209.371 203.808,210.214 L197.23,217.523 C196.038,218.848 193.962,218.848 192.77,217.523 L186.192,210.214 C185.433,209.371 184.352,208.89 183.219,208.89 Z ")
+    })
 }

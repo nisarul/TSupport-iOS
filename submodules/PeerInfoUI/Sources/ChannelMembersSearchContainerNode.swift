@@ -159,7 +159,7 @@ private final class ChannelMembersSearchEntry: Comparable, Identifiable {
             case let .participant(participant, label, revealActions, revealed, enabled):
                 let status: ContactsPeerItemStatus
                 if let label = label {
-                    status = .custom(string: label, multiline: false)
+                    status = .custom(string: label, multiline: false, isActive: false, icon: nil)
                 } else if let presence = participant.presences[participant.peer.id], self.addIcon {
                     status = .presence(EnginePeer.Presence(presence), dateTimeFormat)
                 } else {
@@ -826,8 +826,12 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                                         case let .member(_, _, _, banInfo, _):
                                             if let banInfo = banInfo {
                                                 var exceptionsString = ""
-                                                for (rights, _) in allGroupPermissionList {
+                                                let sendMediaRights = banSendMediaSubList().map { $0.0 }
+                                                for (rights, _) in allGroupPermissionList(peer: .channel(channel), expandMedia: true) {
                                                     if banInfo.rights.flags.contains(rights) {
+                                                        if banInfo.rights.flags.contains(.banSendMedia) && sendMediaRights.contains(rights) {
+                                                            continue
+                                                        }
                                                         if !exceptionsString.isEmpty {
                                                             exceptionsString.append(", ")
                                                         }
@@ -930,7 +934,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                     
                     return entries
                 }
-            } else if let _ = peerView.peers[peerId] as? TelegramGroup, let cachedData = peerView.cachedData as? CachedGroupData {
+            } else if let group = peerView.peers[peerId] as? TelegramGroup, let cachedData = peerView.cachedData as? CachedGroupData {
                 updateActivity(true)
                 let foundGroupMembers: Signal<[RenderedChannelParticipant], NoError>
                 let foundMembers: Signal<[RenderedChannelParticipant], NoError>
@@ -969,7 +973,7 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                                             peers[creator.id] = creator
                                         }
                                         peers[peer.id] = peer
-                                        renderedParticipant = RenderedChannelParticipant(participant: .member(id: peer.id, invitedAt: 0, adminInfo: ChannelParticipantAdminInfo(rights: TelegramChatAdminRights(rights: .groupSpecific), promotedBy: creatorPeer?.id ?? context.account.peerId, canBeEditedByAccountPeer: creatorPeer?.id == context.account.peerId), banInfo: nil, rank: nil), peer: peer, peers: peers)
+                                        renderedParticipant = RenderedChannelParticipant(participant: .member(id: peer.id, invitedAt: 0, adminInfo: ChannelParticipantAdminInfo(rights: TelegramChatAdminRights(rights: TelegramChatAdminRightsFlags.peerSpecific(peer: .legacyGroup(group))), promotedBy: creatorPeer?.id ?? context.account.peerId, canBeEditedByAccountPeer: creatorPeer?.id == context.account.peerId), banInfo: nil, rank: nil), peer: peer, peers: peers)
                                     case .member:
                                         var peers: [PeerId: Peer] = [:]
                                         peers[peer.id] = peer
@@ -1086,8 +1090,12 @@ public final class ChannelMembersSearchContainerNode: SearchDisplayControllerCon
                                         case let .member(_, _, _, banInfo, _):
                                             if let banInfo = banInfo {
                                                 var exceptionsString = ""
-                                                for (rights, _) in allGroupPermissionList {
+                                                let sendMediaRights = banSendMediaSubList().map { $0.0 }
+                                                for (rights, _) in allGroupPermissionList(peer: .legacyGroup(group), expandMedia: true) {
                                                     if banInfo.rights.flags.contains(rights) {
+                                                        if banInfo.rights.flags.contains(.banSendMedia) && sendMediaRights.contains(rights) {
+                                                            continue
+                                                        }
                                                         if !exceptionsString.isEmpty {
                                                             exceptionsString.append(", ")
                                                         }

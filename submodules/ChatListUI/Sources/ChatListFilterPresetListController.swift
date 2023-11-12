@@ -11,6 +11,8 @@ import AccountContext
 import ItemListPeerActionItem
 import ChatListFilterSettingsHeaderItem
 import PremiumUI
+import UndoUI
+import ChatFolderLinkPreviewScreen
 
 private final class ChatListFilterPresetListControllerArguments {
     let context: AccountContext
@@ -55,8 +57,8 @@ private enum ChatListFilterPresetListEntryStableId: Hashable {
     case suggestedPreset(ChatListFilterData)
     case suggestedAddCustom
     case listHeader
-    case preset(Int32)
     case addItem
+    case preset(Int32)
     case listFooter
 }
 
@@ -95,10 +97,10 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
             return 0
         case .listHeader:
             return 100
-        case let .preset(index, _, _, _, _, _, _, _, _):
-            return 101 + index.value
         case .addItem:
-            return 1000
+            return 101
+        case let .preset(index, _, _, _, _, _, _, _, _):
+            return 102 + index.value
         case .listFooter:
             return 1001
         case .suggestedListHeader:
@@ -218,12 +220,15 @@ private func chatListFilterPresetListControllerEntries(presentationData: Present
         return true
     }
     
+    
+    entries.append(.listHeader(presentationData.strings.ChatListFolderSettings_FoldersSection))
+    
+    entries.append(.addItem(text: presentationData.strings.ChatListFilterList_CreateFolder, isEditing: state.isEditing))
+    
     if !filters.isEmpty || suggestedFilters.isEmpty {
-        entries.append(.listHeader(presentationData.strings.ChatListFolderSettings_FoldersSection))
-        
         var folderCount = 0
         for (filter, chatCount) in filtersWithAppliedOrder(filters: filters, order: updatedFilterOrder) {
-            if isPremium, case .allChats = filter {
+            if case .allChats = filter {
                 entries.append(.preset(index: PresetIndex(value: entries.count), title: "", label: "", preset: filter, canBeReordered: filters.count > 1, canBeDeleted: false, isEditing: state.isEditing, isAllChats: true, isDisabled: false))
             }
             if case let .filter(_, title, _, _) = filter {
@@ -231,8 +236,6 @@ private func chatListFilterPresetListControllerEntries(presentationData: Present
                 entries.append(.preset(index: PresetIndex(value: entries.count), title: title, label: chatCount == 0 ? "" : "\(chatCount)", preset: filter, canBeReordered: filters.count > 1, canBeDeleted: true, isEditing: state.isEditing, isAllChats: false, isDisabled: !isPremium && folderCount > limits.maxFoldersCount))
             }
         }
-        
-        entries.append(.addItem(text: presentationData.strings.ChatListFolderSettings_NewFolder, isEditing: state.isEditing))
         
         entries.append(.listFooter(presentationData.strings.ChatListFolderSettings_EditFoldersInfo))
     }
@@ -320,7 +323,7 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
             let _ = (context.engine.peers.updateChatListFiltersInteractively { filters in
                 var filters = filters
                 let id = context.engine.peers.generateNewChatListFilterId(filters: filters)
-                filters.insert(.filter(id: id, title: title, emoticon: nil, data: data), at: 0)
+                filters.append(.filter(id: id, title: title, emoticon: nil, data: data))
                 return filters
             }
             |> deliverOnMainQueue).start(next: { _ in
@@ -377,32 +380,114 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
             return state
         }
     }, removePreset: { id in
-        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-        let actionSheet = ActionSheetController(presentationData: presentationData)
-        
-        actionSheet.setItemGroups([
-            ActionSheetItemGroup(items: [
-                ActionSheetTextItem(title: presentationData.strings.ChatList_RemoveFolderConfirmation),
-                ActionSheetButtonItem(title: presentationData.strings.ChatList_RemoveFolderAction, color: .destructive, action: { [weak actionSheet] in
-                    actionSheet?.dismissAnimated()
+        let _ = (context.engine.peers.currentChatListFilters()
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { filters in
+            guard let filter = filters.first(where: { $0.id == id }) else {
+                return
+            }
+            
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            
+            if case let .filter(_, title, _, data) = filter, data.isShared {
+                let _ = (combineLatest(
+                    context.engine.data.get(
+                        EngineDataList(data.includePeers.peers.map(TelegramEngine.EngineData.Item.Peer.Peer.init(id:))),
+                        EngineDataMap(data.includePeers.peers.map(TelegramEngine.EngineData.Item.Peer.ParticipantCount.init(id:)))
+                    ),
+                    context.engine.peers.getExportedChatFolderLinks(id: id),
+                    context.engine.peers.requestLeaveChatFolderSuggestions(folderId: id)
+                )
+                |> deliverOnMainQueue).start(next: { peerData, links, defaultSelectedPeerIds in
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                     
-                    let _ = (context.engine.peers.updateChatListFiltersInteractively { filters in
-                        var filters = filters
-                        if let index = filters.firstIndex(where: { $0.id == id }) {
-                            filters.remove(at: index)
+                    let peers = peerData.0
+                    var memberCounts: [EnginePeer.Id: Int] = [:]
+                    for (id, count) in peerData.1 {
+                        if let count {
+                            memberCounts[id] = count
                         }
-                        return filters
                     }
-                    |> deliverOnMainQueue).start()
+                    
+                    var hasLinks = false
+                    if let links, !links.isEmpty {
+                        hasLinks = true
+                    }
+                    
+                    let confirmDeleteFolder: () -> Void = {
+                        let filteredPeers = peers.compactMap { $0 }.filter { peer in
+                            if case .channel = peer {
+                                return true
+                            } else {
+                                return false
+                            }
+                        }
+                        
+                        if filteredPeers.isEmpty {
+                            let _ = (context.engine.peers.updateChatListFiltersInteractively { filters in
+                                var filters = filters
+                                if let index = filters.firstIndex(where: { $0.id == id }) {
+                                    filters.remove(at: index)
+                                }
+                                return filters
+                            }
+                            |> deliverOnMainQueue).start()
+                        } else {
+                            let previewScreen = ChatFolderLinkPreviewScreen(
+                                context: context,
+                                subject: .remove(folderId: id, defaultSelectedPeerIds: defaultSelectedPeerIds),
+                                contents: ChatFolderLinkContents(
+                                    localFilterId: id,
+                                    title: title,
+                                    peers: filteredPeers,
+                                    alreadyMemberPeerIds: Set(),
+                                    memberCounts: memberCounts
+                                )
+                            )
+                            pushControllerImpl?(previewScreen)
+                        }
+                    }
+                    
+                    if hasLinks {
+                        presentControllerImpl?(standardTextAlertController(theme: AlertControllerTheme(presentationData: presentationData), title: presentationData.strings.ChatList_AlertDeleteFolderTitle, text: presentationData.strings.ChatList_AlertDeleteFolderText, actions: [
+                            TextAlertAction(type: .destructiveAction, title: presentationData.strings.Common_Delete, action: {
+                                confirmDeleteFolder()
+                            }),
+                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_Cancel, action: {
+                            })
+                        ]))
+                    } else {
+                        confirmDeleteFolder()
+                    }
                 })
-            ]),
-            ActionSheetItemGroup(items: [
-                ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
-                    actionSheet?.dismissAnimated()
-                })
-            ])
-        ])
-        presentControllerImpl?(actionSheet)
+            } else {
+                let actionSheet = ActionSheetController(presentationData: presentationData)
+                
+                actionSheet.setItemGroups([
+                    ActionSheetItemGroup(items: [
+                        ActionSheetTextItem(title: presentationData.strings.ChatList_RemoveFolderConfirmation),
+                        ActionSheetButtonItem(title: presentationData.strings.ChatList_RemoveFolderAction, color: .destructive, action: { [weak actionSheet] in
+                            actionSheet?.dismissAnimated()
+                            
+                            let _ = (context.engine.peers.updateChatListFiltersInteractively { filters in
+                                var filters = filters
+                                if let index = filters.firstIndex(where: { $0.id == id }) {
+                                    filters.remove(at: index)
+                                }
+                                return filters
+                            }
+                            |> deliverOnMainQueue).start()
+                        })
+                    ]),
+                    ActionSheetItemGroup(items: [
+                        ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                            actionSheet?.dismissAnimated()
+                        })
+                    ])
+                ])
+                presentControllerImpl?(actionSheet)
+            }
+        })
     })
         
     let featuredFilters = context.account.postbox.preferencesView(keys: [PreferencesKeys.chatListFiltersFeaturedState])
@@ -512,6 +597,8 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
     |> afterDisposed {
     }
     
+    var previousOrder: [Int32]?
+    
     let controller = ItemListController(context: context, state: signal)
     controller.isOpaqueWhenInOverlay = true
     controller.blocksBackgroundWhenInOverlay = true
@@ -597,6 +684,28 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
                 return .single(false)
             }
         }
+    })
+    controller.setReorderCompleted({ (entries: [ChatListFilterPresetListEntry]) -> Void in
+        let _ = (combineLatest(
+            updatedFilterOrder.get() |> take(1),
+            context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+        )
+        |> deliverOnMainQueue).start(next: { order, peer in
+            let isPremium = peer?.isPremium ?? false
+            if !isPremium, let order = order, order.first != 0 {
+                updatedFilterOrder.set(.single(previousOrder))
+
+                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_reorder", scale: 0.05, colors: [:], title: nil, text: presentationData.strings.ChatListFolderSettings_SubscribeToMoveAll, customUndoText: presentationData.strings.ChatListFolderSettings_SubscribeToMoveAllAction, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { action in
+                    if case .undo = action {
+                        pushControllerImpl?(PremiumIntroScreen(context: context, source: .folders))
+                    }
+                    return false })
+                )
+            } else {
+                previousOrder = order
+            }
+        })
     })
     
     return controller

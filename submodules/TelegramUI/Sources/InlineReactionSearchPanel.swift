@@ -14,6 +14,7 @@ import ContextUI
 import ChatPresentationInterfaceState
 import PremiumUI
 import UndoUI
+import ChatControllerInteraction
 
 private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollViewDelegate {
     private final class DisplayItem {
@@ -112,9 +113,9 @@ private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollVie
                                 }, action: { _, f in
                                     if let strongSelf = self, let peekController = strongSelf.peekController {
                                         if let animationNode = (peekController.contentNode as? StickerPreviewPeekContentNode)?.animationNode {
-                                            let _ = controllerInteraction.sendSticker(.standalone(media: item.file), true, false, nil, true, animationNode.view, animationNode.bounds, nil)
+                                            let _ = controllerInteraction.sendSticker(.standalone(media: item.file), true, false, nil, true, animationNode.view, animationNode.bounds, nil, [])
                                         } else if let imageNode = (peekController.contentNode as? StickerPreviewPeekContentNode)?.imageNode {
-                                            let _ = controllerInteraction.sendSticker(.standalone(media: item.file), true, false, nil, true, imageNode.view, imageNode.bounds, nil)
+                                            let _ = controllerInteraction.sendSticker(.standalone(media: item.file), true, false, nil, true, imageNode.view, imageNode.bounds, nil, [])
                                         }
                                     }
                                     f(.default)
@@ -126,9 +127,9 @@ private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollVie
                             }, action: { _, f in
                                 if let strongSelf = self, let peekController = strongSelf.peekController {
                                     if let animationNode = (peekController.contentNode as? StickerPreviewPeekContentNode)?.animationNode {
-                                        let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, true, nil, true, animationNode.view, animationNode.bounds, nil)
+                                        let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, true, nil, true, animationNode.view, animationNode.bounds, nil, [])
                                     } else if let imageNode = (peekController.contentNode as? StickerPreviewPeekContentNode)?.imageNode {
-                                        let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, true, nil, true, imageNode.view, imageNode.bounds, nil)
+                                        let _ = controllerInteraction.sendSticker(.standalone(media: item.file), false, true, nil, true, imageNode.view, imageNode.bounds, nil, [])
                                     }
                                 }
                                 f(.default)
@@ -180,7 +181,7 @@ private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollVie
                                                 if let packReference = packReference {
                                                     let controller = StickerPackScreen(context: strongSelf.context, mainStickerPack: packReference, stickerPacks: [packReference], parentNavigationController: controllerInteraction.navigationController(), sendSticker: { file, sourceNode, sourceRect in
                                                         if let strongSelf = self, let controllerInteraction = strongSelf.getControllerInteraction?() {
-                                                            return controllerInteraction.sendSticker(file, false, false, nil, true, sourceNode, sourceRect, nil)
+                                                            return controllerInteraction.sendSticker(file, false, false, nil, true, sourceNode, sourceRect, nil, [])
                                                         } else {
                                                             return false
                                                         }
@@ -197,7 +198,7 @@ private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollVie
                                     }
                                 }))
                             )
-                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(account: strongSelf.context.account, theme: strongSelf.theme, strings: strongSelf.strings, item: .pack(item.file), menu: menuItems, openPremiumIntro: { [weak self] in
+                            return (itemNode.view, itemNode.bounds, StickerPreviewPeekContent(context: strongSelf.context, theme: strongSelf.theme, strings: strongSelf.strings, item: .pack(item.file), menu: menuItems, openPremiumIntro: { [weak self] in
                                 guard let strongSelf = self, let controllerInteraction = strongSelf.getControllerInteraction?() else {
                                     return
                                 }
@@ -430,7 +431,7 @@ private final class InlineReactionSearchStickersNode: ASDisplayNode, UIScrollVie
                     itemNode = current
                 } else {
                     let item = HorizontalStickerGridItem(
-                        account: self.context.account,
+                        context: self.context,
                         file: item.file,
                         theme: self.theme,
                         isPreviewed: { [weak self] item in
@@ -577,7 +578,7 @@ final class InlineReactionSearchPanel: ChatInputContextPanelNode {
             guard let strongSelf = self else {
                 return
             }
-            let _ = strongSelf.controllerInteraction?.sendSticker(file, false, false, strongSelf.query, true, node, rect, nil)
+            let _ = strongSelf.controllerInteraction?.sendSticker(file, false, false, strongSelf.query, true, node, rect, nil, [])
         }
         
         self.view.disablesInteractiveTransitionGestureRecognizer = true

@@ -116,12 +116,12 @@ public final class AccountGroupCallContextImpl: AccountGroupCallContext {
             activeSpeakers: Set(),
             groupCall: nil
         )))*/
-
+        
         let state = engine.calls.getGroupCallParticipants(callId: call.id, accessHash: call.accessHash, offset: "", ssrcs: [], limit: 100, sortAscending: nil)
-            |> map(Optional.init)
-            |> `catch` { _ -> Signal<GroupCallParticipantsContext.State?, NoError> in
-                return .single(nil)
-            }
+        |> map(Optional.init)
+        |> `catch` { _ -> Signal<GroupCallParticipantsContext.State?, NoError> in
+            return .single(nil)
+        }
         
         self.disposable = (combineLatest(queue: .mainQueue(),
             state,
@@ -139,7 +139,7 @@ public final class AccountGroupCallContextImpl: AccountGroupCallContext {
                 state: state,
                 previousServiceState: nil
             )
-                        
+            
             strongSelf.participantsContext = context
             strongSelf.panelDataPromise.set(combineLatest(queue: .mainQueue(),
                 context.state,
@@ -286,11 +286,11 @@ private extension CurrentImpl {
         case .mediaStream:
             let ssrcId = UInt32.random(in: 0 ..< UInt32(Int32.max - 1))
             let dict: [String: Any] = [
-                "fingerprints": [],
+                "fingerprints": [] as [Any],
                 "ufrag": "",
                 "pwd": "",
                 "ssrc": Int32(bitPattern: ssrcId),
-                "ssrc-groups": []
+                "ssrc-groups": [] as [Any]
             ]
             guard let jsonString = (try? JSONSerialization.data(withJSONObject: dict, options: [])).flatMap({ String(data: $0, encoding: .utf8) }) else {
                 return .never()
@@ -429,6 +429,15 @@ private extension CurrentImpl {
         switch self {
         case let .call(callContext):
             callContext.getStats(completion: completion)
+        case .mediaStream:
+            break
+        }
+    }
+    
+    func setTone(tone: OngoingGroupCallContext.Tone?) {
+        switch self {
+        case let .call(callContext):
+            callContext.setTone(tone: tone)
         case .mediaStream:
             break
         }
@@ -609,7 +618,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
     
     private let getDeviceAccessData: () -> (presentationData: PresentationData, present: (ViewController, Any?) -> Void, openSettings: () -> Void)
     
-    private var initialCall: EngineGroupCallDescription?
+    private(set) var initialCall: EngineGroupCallDescription?
     public let internalId: CallSessionInternalId
     public let peerId: PeerId
     private let isChannel: Bool
@@ -823,7 +832,6 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
     
     private var didStartConnectingOnce: Bool = false
     private var didConnectOnce: Bool = false
-    private var toneRenderer: PresentationCallToneRenderer?
     
     private var videoCapturer: OngoingCallVideoCapturer?
     private var useFrontCamera: Bool = true
@@ -1648,7 +1656,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                         outgoingAudioBitrateKbit = Int32(value)
                     }
 
-                    genericCallContext = .call(OngoingGroupCallContext(video: self.videoCapturer, requestMediaChannelDescriptions: { [weak self] ssrcs, completion in
+                    genericCallContext = .call(OngoingGroupCallContext(audioSessionActive: self.audioSessionActive.get(), video: self.videoCapturer, requestMediaChannelDescriptions: { [weak self] ssrcs, completion in
                         let disposable = MetaDisposable()
                         Queue.mainQueue().async {
                             guard let strongSelf = self else {
@@ -1841,7 +1849,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                     if isConnecting {
                         strongSelf.beginTone(tone: .groupConnecting)
                     } else {
-                        strongSelf.toneRenderer = nil
+                        strongSelf.beginTone(tone: nil)
                     }
                 }
                 
@@ -2470,12 +2478,11 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
     private func updateIsAudioSessionActive(_ value: Bool) {
         if self.isAudioSessionActive != value {
             self.isAudioSessionActive = value
-            self.toneRenderer?.setAudioSessionActive(value)
         }
     }
 
-    private func beginTone(tone: PresentationCallTone) {
-        if self.isStream {
+    private func beginTone(tone: PresentationCallTone?) {
+        if self.isStream, let tone {
             switch tone {
             case .groupJoined, .groupLeft:
                 return
@@ -2483,21 +2490,15 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                 break
             }
         }
-        var completed: (() -> Void)?
-        let toneRenderer = PresentationCallToneRenderer(tone: tone, completed: {
-            completed?()
-        })
-        completed = { [weak self, weak toneRenderer] in
-            Queue.mainQueue().async {
-                guard let strongSelf = self, let toneRenderer = toneRenderer, toneRenderer === strongSelf.toneRenderer else {
-                    return
-                }
-                strongSelf.toneRenderer = nil
-            }
+        if let tone, let toneData = presentationCallToneData(tone) {
+            self.genericCallContext?.setTone(tone: OngoingGroupCallContext.Tone(
+                samples: toneData,
+                sampleRate: 48000,
+                loopCount: tone.loopCount ?? 100000
+            ))
+        } else {
+            self.genericCallContext?.setTone(tone: nil)
         }
-
-        self.toneRenderer = toneRenderer
-        toneRenderer.setAudioSessionActive(self.isAudioSessionActive)
     }
 
     public func playTone(_ tone: PresentationGroupCallTone) {
@@ -2966,7 +2967,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
         
         self.hasScreencast = true
 
-        let screencastCallContext = OngoingGroupCallContext(video: self.screencastCapturer, requestMediaChannelDescriptions: { _, _ in EmptyDisposable }, rejoinNeeded: { }, outgoingAudioBitrateKbit: nil, videoContentType: .screencast, enableNoiseSuppression: false, disableAudioInput: true, preferX264: false, logPath: "")
+        let screencastCallContext = OngoingGroupCallContext(audioSessionActive: .single(true), video: self.screencastCapturer, requestMediaChannelDescriptions: { _, _ in EmptyDisposable }, rejoinNeeded: { }, outgoingAudioBitrateKbit: nil, videoContentType: .screencast, enableNoiseSuppression: false, disableAudioInput: true, preferX264: false, logPath: "")
         self.screencastCallContext = screencastCallContext
 
         self.screencastJoinDisposable.set((screencastCallContext.joinPayload

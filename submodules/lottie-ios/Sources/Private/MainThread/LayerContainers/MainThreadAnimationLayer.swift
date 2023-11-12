@@ -113,12 +113,6 @@ final class MainThreadAnimationLayer: CALayer, RootAnimationLayer {
       let animation = CABasicAnimation(keyPath: event)
       animation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.linear)
       animation.fromValue = presentation()?.currentFrame
-      if #available(iOS 15.0, *) {
-        let maxFps = Float(UIScreen.main.maximumFramesPerSecond)
-        if maxFps > 61.0 {
-          animation.preferredFrameRateRange = CAFrameRateRange(minimum: maxFps, maximum: maxFps, preferred: maxFps)
-        }
-      }
       return animation
     }
     return super.action(forKey: event)
@@ -255,6 +249,14 @@ final class MainThreadAnimationLayer: CALayer, RootAnimationLayer {
     }
     return nil
   }
+    
+    func allLayers(for keypath: AnimationKeypath) -> [CALayer] {
+        var result: [CALayer] = []
+        for layer in animationLayers {
+            result.append(contentsOf: layer.allLayers(for: keypath))
+        }
+        return result
+    }
 
   func animatorNodes(for keypath: AnimationKeypath) -> [AnimatorNode]? {
     var results = [AnimatorNode]()

@@ -1,0 +1,4 @@
+module SwiftSignalKit {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/SwiftSignalKit.build/SwiftSignalKit-Swift.h"
+    requires objc
+}

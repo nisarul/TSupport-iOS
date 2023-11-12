@@ -1,5 +1,6 @@
 import Foundation
 import Postbox
+import TelegramApi
 
 public final class CachedPeerBotInfo: PostboxCoding, Equatable {
     public let peerId: PeerId
@@ -37,6 +38,63 @@ public struct CachedGroupFlags: OptionSet {
     }
     
     public static let canChangeUsername = CachedGroupFlags(rawValue: 1 << 0)
+    public static let translationHidden = CachedGroupFlags(rawValue: 1 << 1)
+}
+
+public enum PeerAllowedReactions: Equatable, Codable {
+    private enum Discriminant: Int32 {
+        case all = 0
+        case limited = 1
+        case empty = 2
+    }
+    
+    case all
+    case limited([MessageReaction.Reaction])
+    case empty
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StringCodingKey.self)
+        
+        let discriminant = try container.decode(Int32.self, forKey: "_d")
+        switch discriminant {
+        case Discriminant.all.rawValue:
+            self = .all
+        case Discriminant.limited.rawValue:
+            self = .limited(try container.decode([MessageReaction.Reaction].self, forKey: "r"))
+        case Discriminant.empty.rawValue:
+            self = .empty
+        default:
+            assertionFailure()
+            self = .all
+        }
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StringCodingKey.self)
+        
+        switch self {
+        case .all:
+            try container.encode(Discriminant.all.rawValue, forKey: "_d")
+        case let .limited(reactions):
+            try container.encode(Discriminant.limited.rawValue, forKey: "_d")
+            try container.encode(reactions, forKey: "r")
+        case .empty:
+            try container.encode(Discriminant.empty.rawValue, forKey: "_d")
+        }
+    }
+}
+
+extension PeerAllowedReactions {
+    init(apiReactions: Api.ChatReactions) {
+        switch apiReactions {
+        case .chatReactionsAll:
+            self = .all
+        case let .chatReactionsSome(reactions):
+            self = .limited(reactions.compactMap(MessageReaction.Reaction.init(apiReaction:)))
+        case .chatReactionsNone:
+            self = .empty
+        }
+    }
 }
 
 public final class CachedGroupData: CachedPeerData {
@@ -55,7 +113,8 @@ public final class CachedGroupData: CachedPeerData {
     public let callJoinPeerId: PeerId?
     public let themeEmoticon: String?
     public let inviteRequestsPending: Int32?
-    public let allowedReactions: [String]?
+    
+    public let allowedReactions: EnginePeerCachedInfoItem<PeerAllowedReactions>
     
     public let peerIds: Set<PeerId>
     public let messageIds: Set<MessageId>
@@ -79,7 +138,7 @@ public final class CachedGroupData: CachedPeerData {
         self.callJoinPeerId = nil
         self.themeEmoticon = nil
         self.inviteRequestsPending = nil
-        self.allowedReactions = nil
+        self.allowedReactions = .unknown
     }
     
     public init(
@@ -98,7 +157,7 @@ public final class CachedGroupData: CachedPeerData {
         callJoinPeerId: PeerId?,
         themeEmoticon: String?,
         inviteRequestsPending: Int32?,
-        allowedReactions: [String]?
+        allowedReactions: EnginePeerCachedInfoItem<PeerAllowedReactions>
     ) {
         self.participants = participants
         self.exportedInvitation = exportedInvitation
@@ -180,7 +239,13 @@ public final class CachedGroupData: CachedPeerData {
         
         self.inviteRequestsPending = decoder.decodeOptionalInt32ForKey("irp")
         
-        self.allowedReactions = decoder.decodeOptionalStringArrayForKey("allowedReactions")
+        if let legacyAllowedReactions = decoder.decodeOptionalStringArrayForKey("allowedReactions") {
+            self.allowedReactions = .known(.limited(legacyAllowedReactions.map(MessageReaction.Reaction.builtin)))
+        } else if let allowedReactions = decoder.decode(PeerAllowedReactions.self, forKey: "allowedReactionSet") {
+            self.allowedReactions = .known(allowedReactions)
+        } else {
+            self.allowedReactions = .unknown
+        }
         
         var messageIds = Set<MessageId>()
         if let pinnedMessageId = self.pinnedMessageId {
@@ -272,10 +337,11 @@ public final class CachedGroupData: CachedPeerData {
             encoder.encodeNil(forKey: "irp")
         }
         
-        if let allowedReactions = self.allowedReactions {
-            encoder.encodeStringArray(allowedReactions, forKey: "allowedReactions")
-        } else {
-            encoder.encodeNil(forKey: "allowedReactions")
+        switch self.allowedReactions {
+        case .unknown:
+            encoder.encodeNil(forKey: "allowedReactionSet")
+        case let .known(value):
+            encoder.encode(value, forKey: "allowedReactionSet")
         }
     }
     
@@ -359,7 +425,7 @@ public final class CachedGroupData: CachedPeerData {
         return CachedGroupData(participants: self.participants, exportedInvitation: self.exportedInvitation, botInfos: self.botInfos, peerStatusSettings: self.peerStatusSettings, pinnedMessageId: self.pinnedMessageId, about: self.about, flags: self.flags, hasScheduledMessages: self.hasScheduledMessages, invitedBy: self.invitedBy, photo: self.photo, activeCall: self.activeCall, autoremoveTimeout: self.autoremoveTimeout, callJoinPeerId: self.callJoinPeerId, themeEmoticon: self.themeEmoticon, inviteRequestsPending: inviteRequestsPending, allowedReactions: self.allowedReactions)
     }
     
-    public func withUpdatedAllowedReactions(_ allowedReactions: [String]?) -> CachedGroupData {
+    public func withUpdatedAllowedReactions(_ allowedReactions: EnginePeerCachedInfoItem<PeerAllowedReactions>) -> CachedGroupData {
         return CachedGroupData(participants: self.participants, exportedInvitation: self.exportedInvitation, botInfos: self.botInfos, peerStatusSettings: self.peerStatusSettings, pinnedMessageId: self.pinnedMessageId, about: self.about, flags: self.flags, hasScheduledMessages: self.hasScheduledMessages, invitedBy: self.invitedBy, photo: self.photo, activeCall: self.activeCall, autoremoveTimeout: self.autoremoveTimeout, callJoinPeerId: self.callJoinPeerId, themeEmoticon: self.themeEmoticon, inviteRequestsPending: self.inviteRequestsPending, allowedReactions: allowedReactions)
     }
 }

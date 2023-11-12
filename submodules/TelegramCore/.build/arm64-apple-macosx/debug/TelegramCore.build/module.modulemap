@@ -1,0 +1,4 @@
+module TelegramCore {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/TelegramCore.build/TelegramCore-Swift.h"
+    requires objc
+}

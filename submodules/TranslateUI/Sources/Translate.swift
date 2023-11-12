@@ -24,10 +24,7 @@ public var supportedTranslationLanguages = [
     "bg",
     "ca",
     "ceb",
-    "zh-Hans",
-//    "zh-Hant",
-//    "zh-CN", "zh"
-//    "zh-TW"
+    "zh",
     "co",
     "hr",
     "cs",
@@ -126,8 +123,7 @@ public var supportedTranslationLanguages = [
 public var popularTranslationLanguages = [
     "en",
     "ar",
-    "zh-Hans",
-//    "zh-Hant",
+    "zh",
     "fr",
     "de",
     "it",
@@ -135,7 +131,8 @@ public var popularTranslationLanguages = [
     "ko",
     "pt",
     "ru",
-    "es"
+    "es",
+    "uk"
 ]
 
 @available(iOS 12.0, *)
@@ -147,6 +144,10 @@ public func canTranslateText(context: AccountContext, text: String, showTranslat
     }
 
     if #available(iOS 12.0, *) {
+        if context.sharedContext.immediateExperimentalUISettings.disableLanguageRecognition {
+            return (true, nil)
+        }
+        
         var dontTranslateLanguages: [String] = []
         if let ignoredLanguages = ignoredLanguages {
             dontTranslateLanguages = ignoredLanguages
@@ -164,9 +165,20 @@ public func canTranslateText(context: AccountContext, text: String, showTranslat
             supportedTranslationLanguages = ["uk", "ru"]
         }
         
-        let filteredLanguages = hypotheses.filter { supportedTranslationLanguages.contains($0.key.rawValue) }.sorted(by: { $0.value > $1.value })
-        if let language = filteredLanguages.first(where: { supportedTranslationLanguages.contains($0.key.rawValue) }) {
-            return (!dontTranslateLanguages.contains(language.key.rawValue), language.key.rawValue)
+        func normalize(_ code: String) -> String {
+            if code.contains("-") {
+                return code.components(separatedBy: "-").first ?? code
+            } else if code == "nb" {
+                return "no"
+            } else {
+                return code
+            }
+        }
+        
+        let filteredLanguages = hypotheses.filter { supportedTranslationLanguages.contains(normalize($0.key.rawValue)) }.sorted(by: { $0.value > $1.value })
+        if let language = filteredLanguages.first {
+            let languageCode = normalize(language.key.rawValue)
+            return (!dontTranslateLanguages.contains(languageCode), languageCode)
         } else {
             return (false, nil)
         }
@@ -175,78 +187,14 @@ public func canTranslateText(context: AccountContext, text: String, showTranslat
     }
 }
 
-public struct TextTranslationResult: Equatable {
-    let text: String
-    let detectedLanguage: String?
-}
-
-public enum TextTranslationError {
-    case generic
-}
-
-private let userAgents: [String] = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36", // 13.5%
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36", // 6.6%
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0", // 6.4%
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0", // 6.2%
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36", // 5.2%
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36" // 4.8%
-]
-
-public func translateText(context: AccountContext, text: String, from: String?, to: String) -> Signal<TextTranslationResult, TextTranslationError> {
-    return Signal { subscriber in
-        var uri = "https://translate.goo";
-        uri += "gleapis.com/transl";
-        uri += "ate_a";
-        uri += "/singl";
-        uri += "e?client=gtx&sl=" + (from ?? "auto") + "&tl=" + to + "&dt=t" + "&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q=";
-        uri += text.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed)!
-        
-        var request = URLRequest(url: URL(string: uri)!)
-        request.httpMethod = "GET"
-        request.setValue(userAgents[Int.random(in: 0 ..< userAgents.count)], forHTTPHeaderField: "User-Agent")
-        let session = URLSession.shared
-        let task = session.dataTask(with: request, completionHandler: { data, response, error in
-            if let _ = error {
-                subscriber.putError(.generic)
-            } else if let data = data {
-                let json = try? JSONSerialization.jsonObject(with: data, options: []) as? NSArray
-                if let json = json, json.count > 0 {
-                    let array = json[0] as? NSArray ?? NSArray()
-                    var result: String = ""
-                    for i in 0 ..< array.count {
-                        let blockText = array[i] as? NSArray
-                        if let blockText = blockText, blockText.count > 0 {
-                            let value = blockText[0] as? String
-                            if let value = value, value != "null" {
-                                result += value
-                            }
-                        }
-                    }
-                    
-                    let translationResult = TextTranslationResult(text: result, detectedLanguage: json[2] as? String)
-                    
-                    var fromLang: String?
-                    if let lang = translationResult.detectedLanguage {
-                        fromLang = lang
-                    } else if let lang = from {
-                        fromLang = lang
-                    }
-                    if let fromLang = fromLang {
-                        let _ = context.engine.messages.translate(text: text, fromLang: fromLang, toLang: to).start()
-                    }
-                    
-                    subscriber.putNext(translationResult)
-                    subscriber.putCompletion()
-                } else {
-                    subscriber.putError(.generic)
-                }
-            }
-        })
-        task.resume()
-                
-        return ActionDisposable {
-            task.cancel()
-        }
+public func systemLanguageCodes() -> [String] {
+    var languages: [String] = []
+    for language in Locale.preferredLanguages.prefix(2) {
+        let language = language.components(separatedBy: "-").first ?? language
+        languages.append(language)
     }
+    if languages.count == 2 && languages != ["en", "ru"] {
+        languages = Array(languages.prefix(1))
+    }
+    return languages
 }

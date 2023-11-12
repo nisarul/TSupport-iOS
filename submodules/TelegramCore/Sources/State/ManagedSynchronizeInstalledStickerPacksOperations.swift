@@ -91,7 +91,9 @@ func managedSynchronizeInstalledStickerPacksOperations(postbox: Postbox, network
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tag: tag, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeInstalledStickerPacksOperation {
-                            return stateManager.pollStateUpdateCompletion()
+                            return stateManager.isUpdating
+                            |> filter { !$0 }
+                            |> take(1)
                             |> mapToSignal { _ -> Signal<Void, NoError> in
                                 return postbox.transaction { transaction -> Signal<Void, NoError> in
                                     return synchronizeInstalledStickerPacks(transaction: transaction, postbox: postbox, network: network, stateManager: stateManager, namespace: namespace, operation: operation)
@@ -147,7 +149,7 @@ private func fetchStickerPack(network: Network, info: StickerPackCollectionInfo)
         switch result {
         case .stickerSetNotModified:
             break
-        case let .stickerSet(stickerSet, packs, documents):
+        case let .stickerSet(stickerSet, packs, keywords, documents):
             updatedInfo = StickerPackCollectionInfo(apiSet: stickerSet, namespace: info.id.namespace)
             var indexKeysByFile: [MediaId: [MemoryBuffer]] = [:]
             for pack in packs {
@@ -163,6 +165,20 @@ private func fetchStickerPack(network: Network, info: StickerPackCollectionInfo)
                         }
                     }
                     break
+                }
+            }
+            for keyword in keywords {
+                switch keyword {
+                case let .stickerKeyword(documentId, texts):
+                    for text in texts {
+                        let key = ValueBoxKey(text).toMemoryBuffer()
+                        let mediaId = MediaId(namespace: Namespaces.Media.CloudFile, id: documentId)
+                        if indexKeysByFile[mediaId] == nil {
+                            indexKeysByFile[mediaId] = [key]
+                        } else {
+                            indexKeysByFile[mediaId]!.append(key)
+                        }
+                    }
                 }
             }
             
@@ -224,8 +240,10 @@ private func installRemoteStickerPacks(network: Network, infos: [StickerPackColl
                                 archivedIds.insert(StickerPackCollectionInfo(apiSet: set, namespace: info.id.namespace).id)
                             case let .stickerSetMultiCovered(set, _):
                                 archivedIds.insert(StickerPackCollectionInfo(apiSet: set, namespace: info.id.namespace).id)
-                            case let .stickerSetFullCovered(set, _, _):
+                            case let .stickerSetFullCovered(set, _, _, _):
                                 archivedIds.insert(StickerPackCollectionInfo(apiSet: set, namespace: info.id.namespace).id)
+                                case let .stickerSetNoCovered(set):
+                                    archivedIds.insert(StickerPackCollectionInfo(apiSet: set, namespace: info.id.namespace).id)
                             }
                         }
                         return archivedIds

@@ -1,0 +1,4 @@
+module TelegramApi {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/TelegramApi.build/TelegramApi-Swift.h"
+    requires objc
+}

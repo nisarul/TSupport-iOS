@@ -1,3 +1,4 @@
+import Foundation
 import SwiftSignalKit
 import Postbox
 
@@ -25,6 +26,10 @@ public extension TelegramEngine {
             return _internal_updateContactName(account: self.account, peerId: peerId, firstName: firstName, lastName: lastName)
         }
 
+        public func updateContactPhoto(peerId: PeerId, resource: MediaResource?, videoResource: MediaResource?, videoStartTimestamp: Double?, markup: UploadPeerPhotoMarkup?, mode: SetCustomPeerPhotoMode, mapResourceToAvatarSizes: @escaping (MediaResource, [TelegramMediaImageRepresentation]) -> Signal<[Int: Data], NoError>) -> Signal<UpdatePeerPhotoStatus, UploadPeerPhotoError> {
+            return _internal_updateContactPhoto(account: self.account, peerId: peerId, resource: resource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, markup: markup, mode: mode, mapResourceToAvatarSizes: mapResourceToAvatarSizes)
+        }
+        
         public func deviceContactsImportedByCount(contacts: [(String, [DeviceContactNormalizedPhoneNumber])]) -> Signal<[String: Int32], NoError> {
             return _internal_deviceContactsImportedByCount(postbox: self.account.postbox, contacts: contacts)
         }
@@ -68,6 +73,33 @@ public extension TelegramEngine {
                 })
             }
             |> ignoreValues
+        }
+        
+        public func findPeerByLocalContactIdentifier(identifier: String) -> Signal<EnginePeer?, NoError> {
+            return self.account.postbox.transaction { transaction -> EnginePeer? in
+                var foundPeerId: PeerId?
+                transaction.enumerateDeviceContactImportInfoItems({ _, value in
+                    if let value = value as? TelegramDeviceContactImportedData {
+                        switch value {
+                        case let .imported(data, _, peerId):
+                            if data.localIdentifiers.contains(identifier) {
+                                if let peerId = peerId {
+                                    foundPeerId = peerId
+                                    return false
+                                }
+                            }
+                        default:
+                            break
+                        }
+                    }
+                    return true
+                })
+                if let foundPeerId = foundPeerId {
+                    return transaction.getPeer(foundPeerId).flatMap(EnginePeer.init)
+                } else {
+                    return nil
+                }
+            }
         }
     }
 }

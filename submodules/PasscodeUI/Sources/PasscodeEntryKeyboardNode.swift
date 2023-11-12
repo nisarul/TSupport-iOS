@@ -8,20 +8,12 @@ import GradientBackground
 
 private let regularTitleFont = Font.regular(36.0)
 private let regularSubtitleFont: UIFont = {
-    if #available(iOS 8.2, *) {
-        return UIFont.systemFont(ofSize: 10.0, weight: UIFont.Weight.bold)
-    } else {
-        return CTFontCreateWithName("HelveticaNeue-Bold" as CFString, 10.0, nil)
-    }
+    return UIFont.systemFont(ofSize: 10.0, weight: UIFont.Weight.bold)
 }()
 
 private let largeTitleFont = Font.regular(40.0)
 private let largeSubtitleFont: UIFont = {
-    if #available(iOS 8.2, *) {
-        return UIFont.systemFont(ofSize: 12.0, weight: UIFont.Weight.bold)
-    } else {
-        return CTFontCreateWithName("HelveticaNeue-Bold" as CFString, 12.0, nil)
-    }
+    return UIFont.systemFont(ofSize: 12.0, weight: UIFont.Weight.bold)
 }()
 
 private func generateButtonImage(background: PasscodeBackground, frame: CGRect, title: String, subtitle: String, highlighted: Bool) -> UIImage? {
@@ -127,6 +119,10 @@ final class PasscodeEntryButtonNode: HighlightTrackingButtonNode {
             let blurredBackgroundColor = (background.inverted ? UIColor(rgb: 0xffffff, alpha: 0.1) : UIColor(rgb: 0x000000, alpha: 0.2), dateFillNeedsBlur(theme: presentationData.theme, wallpaper: presentationData.chatWallpaper))
             let blurredBackgroundNode = NavigationBackgroundNode(color: blurredBackgroundColor.0, enableBlur: blurredBackgroundColor.1)
             self.blurredBackgroundNode = blurredBackgroundNode
+            
+            if isReduceTransparencyEnabled() {
+                blurredBackgroundNode.alpha = 0.1
+            }
         }
         
         self.backgroundNode = ASImageNode()
@@ -135,6 +131,9 @@ final class PasscodeEntryButtonNode: HighlightTrackingButtonNode {
         self.backgroundNode.isUserInteractionEnabled = false
         
         super.init()
+        
+        self.accessibilityLabel = title
+        self.accessibilityTraits = .keyboardKey
         
         if let gradientBackgroundNode = self.gradientBackgroundNode {
             self.addSubnode(gradientBackgroundNode)

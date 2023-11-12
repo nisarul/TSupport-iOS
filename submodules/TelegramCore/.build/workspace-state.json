@@ -1,0 +1,234 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "crc32",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Crc32",
+          "name" : "Crc32"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Crc32"
+        },
+        "subpath" : "crc32"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "cryptoutils",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/CryptoUtils",
+          "name" : "CryptoUtils"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/CryptoUtils"
+        },
+        "subpath" : "cryptoutils"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "darwindirstat",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Utils/DarwinDirStat",
+          "name" : "DarwinDirStat"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Utils/DarwinDirStat"
+        },
+        "subpath" : "darwindirstat"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "encryptionprovider",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/EncryptionProvider",
+          "name" : "EncryptionProvider"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/EncryptionProvider"
+        },
+        "subpath" : "encryptionprovider"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "legacyreachability",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Reachability/LegacyReachability",
+          "name" : "LegacyReachability"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Reachability/LegacyReachability"
+        },
+        "subpath" : "legacyreachability"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "managedfile",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/ManagedFile",
+          "name" : "ManagedFile"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/ManagedFile"
+        },
+        "subpath" : "managedfile"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "mtprotokit",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MtProtoKit",
+          "name" : "MtProtoKit"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MtProtoKit"
+        },
+        "subpath" : "mtprotokit"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "murmurhash32",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MurMurHash32",
+          "name" : "MurMurHash32"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MurMurHash32"
+        },
+        "subpath" : "murmurhash32"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "networklogging",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/NetworkLogging",
+          "name" : "NetworkLogging"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/NetworkLogging"
+        },
+        "subpath" : "networklogging"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "postbox",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Postbox",
+          "name" : "Postbox"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Postbox"
+        },
+        "subpath" : "postbox"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "rangeset",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Utils/RangeSet",
+          "name" : "RangeSet"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Utils/RangeSet"
+        },
+        "subpath" : "rangeset"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "reachability",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Reachability",
+          "name" : "Reachability"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Reachability"
+        },
+        "subpath" : "reachability"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "sqlcipher",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/sqlcipher",
+          "name" : "sqlcipher"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/sqlcipher"
+        },
+        "subpath" : "sqlcipher"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "ssignalkit",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/SSignalKit",
+          "name" : "SSignalKit"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/SSignalKit"
+        },
+        "subpath" : "ssignalkit"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "stringtransliteration",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/StringTransliteration",
+          "name" : "StringTransliteration"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/StringTransliteration"
+        },
+        "subpath" : "stringtransliteration"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "telegramapi",
+          "kind" : "fileSystem",
+          "location" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramApi",
+          "name" : "TelegramApi"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramApi"
+        },
+        "subpath" : "telegramapi"
+      }
+    ]
+  },
+  "version" : 6
+}

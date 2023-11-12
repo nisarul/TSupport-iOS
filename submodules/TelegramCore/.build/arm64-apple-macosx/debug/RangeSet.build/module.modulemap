@@ -1,0 +1,4 @@
+module RangeSet {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/RangeSet.build/RangeSet-Swift.h"
+    requires objc
+}

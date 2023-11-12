@@ -186,7 +186,7 @@ private final class MultipartUploadManager {
             self.bigTotalParts = nil
         } else {
             self.bigParts = false
-            self.defaultPartSize = 16 * 1024
+            self.defaultPartSize = 128 * 1024
             self.bigTotalParts = nil
         }
     }
@@ -317,7 +317,7 @@ private final class MultipartUploadManager {
                     switch resourceData {
                         case let .resourceData(data):
                             if let file = ManagedFile(queue: nil, path: data.path, mode: .read) {
-                                file.seek(position: Int64(partOffset))
+                                let _ = file.seek(position: Int64(partOffset))
                                 let data = file.readData(count: Int(partSize))
                                 if data.count == partSize {
                                     partData = data
@@ -433,7 +433,7 @@ func multipartUpload(network: Network, postbox: Postbox, source: MultipartUpload
                 case let .resource(resource):
                     dataSignal = postbox.mediaBox.resourceData(resource.resource, option: .incremental(waitUntilFetchStatus: true)) |> map { MultipartUploadData.resourceData($0) }
                     headerSize = resource.resource.headerSize
-                    fetchedResource = fetchedMediaResource(mediaBox: postbox.mediaBox, reference: resource)
+                    fetchedResource = fetchedMediaResource(mediaBox: postbox.mediaBox, userLocation: .other, userContentType: .other, reference: resource)
                     |> map { _ in }
                 case let .tempFile(file):
                     if let size = fileSize(file.path) {

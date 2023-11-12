@@ -241,6 +241,7 @@ public final class WindowKeyboardGestureRecognizerDelegate: NSObject, UIGestureR
 public class Window1 {
     public let hostView: WindowHostView
     public let badgeView: UIImageView
+    private let customProximityDimView: UIView
     
     private var deviceMetrics: DeviceMetrics
     
@@ -257,8 +258,6 @@ public class Window1 {
     private var updatingLayout: UpdatingLayout?
     private var updatedContainerLayout: ContainerViewLayout?
     private var upperKeyboardInputPositionBound: CGFloat?
-    private var cachedWindowSubviewCount: Int = 0
-    private var cachedHasPreview: Bool = false
     
     private let presentationContext: PresentationContext
     private let overlayPresentationContext: GlobalOverlayPresentationContext
@@ -270,10 +269,7 @@ public class Window1 {
     private var shouldInvalidateSupportedOrientations = false
     
     private var statusBarHidden = false
-    
-    public var previewThemeAccentColor: UIColor = .blue
-    public var previewThemeDarkBlur: Bool = false
-    
+        
     private var shouldNotAnimateLikelyKeyboardAutocorrectionSwitch: Bool = false
     
     public private(set) var forceInCallStatusBarText: String? = nil
@@ -332,6 +328,10 @@ public class Window1 {
         self.badgeView = UIImageView()
         self.badgeView.image = UIImage(bundleImageName: "Components/AppBadge")
         self.badgeView.isHidden = true
+        
+        self.customProximityDimView = UIView()
+        self.customProximityDimView.backgroundColor = .black
+        self.customProximityDimView.isHidden = true
         
         self.systemUserInterfaceStyle = hostView.systemUserInterfaceStyle
         
@@ -490,7 +490,16 @@ public class Window1 {
         
         self.keyboardFrameChangeObserver = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: nil, using: { [weak self] notification in
             if let strongSelf = self {
+                var isTablet = false
+                if case .regular = strongSelf.windowLayout.metrics.widthClass {
+                    isTablet = true
+                }
+                
                 var keyboardFrame: CGRect = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? CGRect()
+                if isTablet && keyboardFrame.isEmpty {
+                    return
+                }
+                                
                 if #available(iOSApplicationExtension 14.2, iOS 14.2, *), UIAccessibility.prefersCrossFadeTransitions {
                 } else if let keyboardView = strongSelf.statusBarHost?.keyboardView {
                     if keyboardFrame.width.isEqual(to: keyboardView.bounds.width) && keyboardFrame.height.isEqual(to: keyboardView.bounds.height) && keyboardFrame.minX.isEqual(to: keyboardView.frame.minX) {
@@ -498,11 +507,19 @@ public class Window1 {
                     }
                 }
                 
-                
-                var popoverDelta: CGFloat = 0.0
+                var minKeyboardY: CGFloat?
+                if #available(iOSApplicationExtension 16.1, iOS 16.1, *), let screen = notification.object as? UIScreen, let keyboardFrameEnd = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    let fromCoordinateSpace = screen.coordinateSpace
+                    let toCoordinateSpace: UICoordinateSpace = strongSelf.hostView.eventView
+
+                    let convertedKeyboardFrameEnd = fromCoordinateSpace.convert(keyboardFrameEnd, to: toCoordinateSpace)
+                    minKeyboardY = convertedKeyboardFrameEnd.minY
+                }
+
+                var windowedHeightDifference: CGFloat = 0.0
                 
                 let screenHeight: CGFloat
-                var inPopover = false
+                var isWindowed = false
                 if keyboardFrame.width.isEqual(to: UIScreen.main.bounds.width) {
                     let screenSize = UIScreen.main.bounds.size
                     var portraitScreenSize = UIScreen.main.bounds.size
@@ -516,40 +533,60 @@ public class Window1 {
                     
                     if strongSelf.windowLayout.size.height != screenSize.height {
                         let heightDelta = screenSize.height - strongSelf.windowLayout.size.height
-                        
-                        let heightDeltaValid = heightDelta > 0.0 && heightDelta < 100.0
-                        
-                        if heightDeltaValid {
-                            inPopover = true
-                            popoverDelta = heightDelta / 2.0
-                        }
+                        //if heightDelta > 0.0 && heightDelta < 200.0 {
+                            isWindowed = true
+                            windowedHeightDifference = heightDelta / 2.0
+                        //}
                     }
                     
                     if #available(iOSApplicationExtension 13.0, iOS 13.0, *) {
-                        screenHeight = UIScreen.main.bounds.height
+                        if isWindowed, let _ = minKeyboardY {
+                            screenHeight = strongSelf.windowLayout.size.height
+                        } else {
+                            screenHeight = UIScreen.main.bounds.height
+                        }
                     } else {
                         screenHeight = strongSelf.windowLayout.size.height
                     }
                 } else {
-                    if keyboardFrame.minX > 0.0 {
-                        screenHeight = UIScreen.main.bounds.height
+                    if let _ = minKeyboardY {
+                        screenHeight = strongSelf.windowLayout.size.height
                     } else {
-                        screenHeight = UIScreen.main.bounds.width
+                        if keyboardFrame.minX > 0.0 {
+                            screenHeight = UIScreen.main.bounds.height
+                        } else {
+                            screenHeight = UIScreen.main.bounds.width
+                        }
                     }
                 }
                 
                 var keyboardHeight: CGFloat
                 if keyboardFrame.isEmpty || keyboardFrame.maxY < screenHeight {
-                    keyboardHeight = 0.0
+                    if isWindowed || (isTablet && screenHeight - keyboardFrame.maxY < 5.0) {
+                        if let minKeyboardY {
+                            keyboardFrame.origin.y = minKeyboardY
+                        }
+                        keyboardHeight = max(0.0, screenHeight - keyboardFrame.minY)
+                        if isWindowed && !keyboardHeight.isZero, minKeyboardY == nil {
+                            keyboardHeight = max(0.0, keyboardHeight - windowedHeightDifference)
+                        }
+                    } else {
+                        keyboardHeight = 0.0
+                    }
                 } else {
+                    if let minKeyboardY {
+                        keyboardFrame.origin.y = minKeyboardY
+                    }
                     keyboardHeight = max(0.0, screenHeight - keyboardFrame.minY)
-                    if inPopover && !keyboardHeight.isZero {
-                        keyboardHeight = max(0.0, keyboardHeight - popoverDelta)
+                    if isWindowed && !keyboardHeight.isZero, minKeyboardY == nil {
+                        keyboardHeight = max(0.0, keyboardHeight - windowedHeightDifference)
                     }
                 }
                 
-                print("keyboardHeight: \(keyboardHeight) (raw: \(keyboardFrame))")
-            
+                if strongSelf.hostView.containerView is ChildWindowHostView, !isTablet {
+                    keyboardHeight += 27.0
+                }
+                            
                 var duration: Double = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.0
                 if duration > Double.ulpOfOne {
                     duration = 0.5
@@ -632,6 +669,7 @@ public class Window1 {
         self.windowPanRecognizer = recognizer
         self.hostView.containerView.addGestureRecognizer(recognizer)
         self.hostView.containerView.addSubview(self.badgeView)
+        self.hostView.containerView.addSubview(self.customProximityDimView)
     }
             
     public required init(coder aDecoder: NSCoder) {
@@ -665,11 +703,18 @@ public class Window1 {
         self.updateBadgeVisibility()
     }
     
+    public func setProximityDimHidden(_ hidden: Bool) {
+        guard hidden != self.customProximityDimView.isHidden else {
+            return
+        }
+        self.customProximityDimView.isHidden = hidden
+    }
+    
     private func updateBadgeVisibility() {
-        let badgeIsHidden = !self.deviceMetrics.hasTopNotch || self.forceBadgeHidden || self.windowLayout.size.width > self.windowLayout.size.height
+        let badgeIsHidden = !self.deviceMetrics.showAppBadge || self.forceBadgeHidden || self.windowLayout.size.width > self.windowLayout.size.height
         if badgeIsHidden != self.badgeView.isHidden && !badgeIsHidden {
             Queue.mainQueue().after(0.4) {
-                let badgeShouldBeHidden = !self.deviceMetrics.hasTopNotch || self.forceBadgeHidden || self.windowLayout.size.width > self.windowLayout.size.height
+                let badgeShouldBeHidden = !self.deviceMetrics.showAppBadge || self.forceBadgeHidden || self.windowLayout.size.width > self.windowLayout.size.height
                 if badgeShouldBeHidden == badgeIsHidden {
                     self.badgeView.isHidden = badgeIsHidden
                 }
@@ -1119,8 +1164,10 @@ public class Window1 {
                 
                 if let image = self.badgeView.image {
                     self.updateBadgeVisibility()
-                    self.badgeView.frame = CGRect(origin: CGPoint(x: floorToScreenPixels((self.windowLayout.size.width - image.size.width) / 2.0), y: 6.0), size: image.size)
+                    self.badgeView.frame = CGRect(origin: CGPoint(x: floorToScreenPixels((self.windowLayout.size.width - image.size.width) / 2.0), y: 5.0), size: image.size)
                 }
+                
+                self.customProximityDimView.frame = CGRect(origin: .zero, size: self.windowLayout.size)
             }
         }
     }

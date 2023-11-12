@@ -22,6 +22,9 @@ swift_library(
         "//submodules/Markdown:Markdown",
         "//submodules/TextFormat:TextFormat",
         "//submodules/TelegramUI/Components/TextNodeWithEntities:TextNodeWithEntities",
+        "//submodules/TelegramUI/Components/EntityKeyboard:EntityKeyboard",
+        "//submodules/UndoUI:UndoUI",
+        "//submodules/AnimationUI:AnimationUI",
     ],
     visibility = [
         "//visibility:public",

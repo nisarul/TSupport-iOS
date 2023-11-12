@@ -14,6 +14,7 @@ swift_library(
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
         "//submodules/TelegramCore:TelegramCore",
+        "//submodules/Postbox:Postbox",
         "//submodules/AvatarNode:AvatarNode",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramStringFormatting:TelegramStringFormatting",
@@ -23,6 +24,9 @@ swift_library(
         "//submodules/ContextUI:ContextUI",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/ComponentFlow:ComponentFlow",
+        "//submodules/TelegramUI/Components/EmojiStatusComponent:EmojiStatusComponent",
+        "//submodules/CheckNode",
     ],
     visibility = [
         "//visibility:public",

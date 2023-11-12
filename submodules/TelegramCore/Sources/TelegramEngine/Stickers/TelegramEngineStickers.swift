@@ -30,7 +30,7 @@ public extension TelegramEngine {
             return _internal_randomGreetingSticker(account: self.account)
         }
 
-        public func searchStickers(query: String, scope: SearchStickersScope = [.installed, .remote]) -> Signal<[FoundStickerItem], NoError> {
+        public func searchStickers(query: [String], scope: SearchStickersScope = [.installed, .remote]) -> Signal<(items: [FoundStickerItem], isFinalResult: Bool), NoError> {
             return _internal_searchStickers(account: self.account, query: query, scope: scope)
         }
 
@@ -105,7 +105,11 @@ public extension TelegramEngine {
             return _internal_cachedAvailableReactions(postbox: self.account.postbox)
         }
         
-        public func updateQuickReaction(reaction: String) -> Signal<Never, NoError> {
+        public func emojiSearchCategories(kind: EmojiSearchCategories.Kind) -> Signal<EmojiSearchCategories?, NoError> {
+            return _internal_cachedEmojiSearchCategories(postbox: self.account.postbox, kind: kind)
+        }
+        
+        public func updateQuickReaction(reaction: MessageReaction.Reaction) -> Signal<Never, NoError> {
             let _ = updateReactionSettingsInteractively(postbox: self.account.postbox, { settings in
                 var settings = settings
                 settings.quickReaction = reaction
@@ -140,6 +144,18 @@ public extension TelegramEngine {
             |> ignoreValues
         }
         
+        public func clearRecentlyUsedReactions() -> Signal<Never, NoError> {
+            let _ = self.account.postbox.transaction({ transaction -> Void in
+                transaction.replaceOrderedItemListItems(collectionId: Namespaces.OrderedItemList.CloudRecentReactions, items: [])
+            }).start()
+            
+            return self.account.network.request(Api.functions.messages.clearRecentReactions())
+            |> `catch` { _ -> Signal<Api.Bool, NoError> in
+                return .single(.boolFalse)
+            }
+            |> ignoreValues
+        }
+        
         public func reorderStickerPacks(namespace: ItemCollectionId.Namespace, itemIds: [ItemCollectionId]) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
                 let infos = transaction.getItemCollectionsInfos(namespace: namespace)
@@ -165,48 +181,90 @@ public extension TelegramEngine {
         }
         
         public func resolveInlineStickers(fileIds: [Int64]) -> Signal<[Int64: TelegramMediaFile], NoError> {
-            return self.account.postbox.transaction { transaction -> [Int64: TelegramMediaFile] in
-                var cachedFiles: [Int64: TelegramMediaFile] = [:]
-                for fileId in fileIds {
-                    if let file = transaction.getMedia(MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)) as? TelegramMediaFile {
-                        cachedFiles[fileId] = file
-                    }
-                }
-                return cachedFiles
+            return _internal_resolveInlineStickers(postbox: self.account.postbox, network: self.account.network, fileIds: fileIds)
+        }
+        
+        public func searchEmoji(emojiString: [String]) -> Signal<(items: [TelegramMediaFile], isFinalResult: Bool), NoError> {
+            return _internal_searchEmoji(account: self.account, query: emojiString)
+            |> map { items, isFinalResult -> (items: [TelegramMediaFile], isFinalResult: Bool) in
+                return (items.map(\.file), isFinalResult)
             }
-            |> mapToSignal { cachedFiles -> Signal<[Int64: TelegramMediaFile], NoError> in
-                if cachedFiles.count == fileIds.count {
-                    return .single(cachedFiles)
-                }
-                
-                var unknownIds = Set<Int64>()
-                for fileId in fileIds {
-                    if cachedFiles[fileId] == nil {
-                        unknownIds.insert(fileId)
-                    }
-                }
-                
-                return self.account.network.request(Api.functions.messages.getCustomEmojiDocuments(documentId: Array(unknownIds)))
-                |> map(Optional.init)
-                |> `catch` { _ -> Signal<[Api.Document]?, NoError> in
-                    return .single(nil)
-                }
-                |> mapToSignal { result -> Signal<[Int64: TelegramMediaFile], NoError> in
-                    guard let result = result else {
-                        return .single(cachedFiles)
-                    }
-                    return self.account.postbox.transaction { transaction -> [Int64: TelegramMediaFile] in
-                        var resultFiles: [Int64: TelegramMediaFile] = cachedFiles
+        }
+    }
+}
+
+func _internal_resolveInlineStickers(postbox: Postbox, network: Network, fileIds: [Int64]) -> Signal<[Int64: TelegramMediaFile], NoError> {
+    return postbox.transaction { transaction -> [Int64: TelegramMediaFile] in
+        var cachedFiles: [Int64: TelegramMediaFile] = [:]
+        for fileId in fileIds {
+            if let file = transaction.getMedia(MediaId(namespace: Namespaces.Media.CloudFile, id: fileId)) as? TelegramMediaFile {
+                cachedFiles[fileId] = file
+            }
+        }
+        return cachedFiles
+    }
+    |> mapToSignal { cachedFiles -> Signal<[Int64: TelegramMediaFile], NoError> in
+        if cachedFiles.count == fileIds.count {
+            return .single(cachedFiles)
+        }
+        
+        var unknownIds = Set<Int64>()
+        for fileId in fileIds {
+            if cachedFiles[fileId] == nil {
+                unknownIds.insert(fileId)
+            }
+        }
+        
+        var signals: [Signal<[Api.Document]?, NoError>] = []
+        var remainingIds = Array(unknownIds)
+        while !remainingIds.isEmpty {
+            let partIdCount = min(100, remainingIds.count)
+            let partIds = remainingIds.prefix(partIdCount)
+            remainingIds.removeFirst(partIdCount)
+            signals.append(network.request(Api.functions.messages.getCustomEmojiDocuments(documentId: Array(partIds)))
+            |> map(Optional.init)
+            |> `catch` { _ -> Signal<[Api.Document]?, NoError> in
+                return .single(nil)
+            })
+        }
+        
+        return combineLatest(signals)
+        |> mapToSignal { documentSets -> Signal<[Int64: TelegramMediaFile], NoError> in
+            return postbox.transaction { transaction -> [Int64: TelegramMediaFile] in
+                var resultFiles: [Int64: TelegramMediaFile] = cachedFiles
+                for result in documentSets {
+                    if let result = result {
                         for document in result {
                             if let file = telegramMediaFileFromApiDocument(document) {
                                 resultFiles[file.fileId.id] = file
                                 transaction.storeMediaIfNotPresent(media: file)
                             }
                         }
-                        return resultFiles
                     }
                 }
+                return resultFiles
             }
         }
+        
+        /*return network.request(Api.functions.messages.getCustomEmojiDocuments(documentId: Array(unknownIds)))
+        |> map(Optional.init)
+        |> `catch` { _ -> Signal<[Api.Document]?, NoError> in
+            return .single(nil)
+        }
+        |> mapToSignal { result -> Signal<[Int64: TelegramMediaFile], NoError> in
+            guard let result = result else {
+                return .single(cachedFiles)
+            }
+            return postbox.transaction { transaction -> [Int64: TelegramMediaFile] in
+                var resultFiles: [Int64: TelegramMediaFile] = cachedFiles
+                for document in result {
+                    if let file = telegramMediaFileFromApiDocument(document) {
+                        resultFiles[file.fileId.id] = file
+                        transaction.storeMediaIfNotPresent(media: file)
+                    }
+                }
+                return resultFiles
+            }
+        }*/
     }
 }

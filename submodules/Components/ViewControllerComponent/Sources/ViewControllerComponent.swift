@@ -20,11 +20,19 @@ open class ViewControllerComponentContainer: ViewController {
         case `default`
     }
     
+    public enum PresentationMode {
+        case `default`
+        case modal
+    }
+    
     public final class Environment: Equatable {
         public let statusBarHeight: CGFloat
         public let navigationHeight: CGFloat
         public let safeInsets: UIEdgeInsets
+        public let inputHeight: CGFloat
         public let metrics: LayoutMetrics
+        public let deviceMetrics: DeviceMetrics
+        public let orientation: UIInterfaceOrientation?
         public let isVisible: Bool
         public let theme: PresentationTheme
         public let strings: PresentationStrings
@@ -35,7 +43,10 @@ open class ViewControllerComponentContainer: ViewController {
             statusBarHeight: CGFloat,
             navigationHeight: CGFloat,
             safeInsets: UIEdgeInsets,
+            inputHeight: CGFloat,
             metrics: LayoutMetrics,
+            deviceMetrics: DeviceMetrics,
+            orientation: UIInterfaceOrientation? = nil,
             isVisible: Bool,
             theme: PresentationTheme,
             strings: PresentationStrings,
@@ -45,7 +56,10 @@ open class ViewControllerComponentContainer: ViewController {
             self.statusBarHeight = statusBarHeight
             self.navigationHeight = navigationHeight
             self.safeInsets = safeInsets
+            self.inputHeight = inputHeight
             self.metrics = metrics
+            self.deviceMetrics = deviceMetrics
+            self.orientation = orientation
             self.isVisible = isVisible
             self.theme = theme
             self.strings = strings
@@ -67,7 +81,16 @@ open class ViewControllerComponentContainer: ViewController {
             if lhs.safeInsets != rhs.safeInsets {
                 return false
             }
+            if lhs.inputHeight != rhs.inputHeight {
+                return false
+            }
             if lhs.metrics != rhs.metrics {
+                return false
+            }
+            if lhs.deviceMetrics != rhs.deviceMetrics {
+                return false
+            }
+            if lhs.orientation != rhs.orientation {
                 return false
             }
             if lhs.isVisible != rhs.isVisible {
@@ -125,7 +148,9 @@ open class ViewControllerComponentContainer: ViewController {
                 statusBarHeight: layout.statusBarHeight ?? 0.0,
                 navigationHeight: navigationHeight,
                 safeInsets: UIEdgeInsets(top: layout.intrinsicInsets.top + layout.safeInsets.top, left: layout.safeInsets.left, bottom: layout.intrinsicInsets.bottom + layout.safeInsets.bottom, right: layout.safeInsets.right),
+                inputHeight: layout.inputHeight ?? 0.0,
                 metrics: layout.metrics,
+                deviceMetrics: layout.deviceMetrics,
                 isVisible: self.currentIsVisible,
                 theme: self.theme ?? self.presentationData.theme,
                 strings: self.presentationData.strings,
@@ -178,7 +203,7 @@ open class ViewControllerComponentContainer: ViewController {
     private var presentationDataDisposable: Disposable?
     public private(set) var validLayout: ContainerViewLayout?
     
-    public init<C: Component>(context: AccountContext, component: C, navigationBarAppearance: NavigationBarAppearance, statusBarStyle: StatusBarStyle = .default, theme: PresentationTheme? = nil) where C.EnvironmentType == ViewControllerComponentContainer.Environment {
+    public init<C: Component>(context: AccountContext, component: C, navigationBarAppearance: NavigationBarAppearance, statusBarStyle: StatusBarStyle = .default, presentationMode: PresentationMode = .default, theme: PresentationTheme? = nil) where C.EnvironmentType == ViewControllerComponentContainer.Environment {
         self.context = context
         self.component = AnyComponent(component)
         self.theme = theme
@@ -199,7 +224,12 @@ open class ViewControllerComponentContainer: ViewController {
         self.presentationDataDisposable = (self.context.sharedContext.presentationData
         |> deliverOnMainQueue).start(next: { [weak self] presentationData in
             if let strongSelf = self {
-                strongSelf.node.presentationData = presentationData
+                var theme = presentationData.theme
+                if case .modal = presentationMode {
+                    theme = theme.withModalBlocksBackground()
+                }
+
+                strongSelf.node.presentationData = presentationData.withUpdated(theme: theme)
         
                 switch statusBarStyle {
                     case .none:

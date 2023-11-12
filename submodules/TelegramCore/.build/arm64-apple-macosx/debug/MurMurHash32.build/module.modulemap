@@ -1,0 +1,4 @@
+module MurMurHash32 {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MurMurHash32/PublicHeaders/MurMurHash32/MurMurHash32.h"
+    export *
+}

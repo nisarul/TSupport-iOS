@@ -21,8 +21,6 @@
 
 #import <LegacyComponents/TGSecretTimerMenu.h>
 
-#import "TGPhotoEntitiesContainerView.h"
-
 @interface TGMediaPickerGalleryModel ()
 {
     TGMediaPickerGalleryInterfaceView *_interfaceView;
@@ -340,10 +338,10 @@
 
 - (void)presentPhotoEditorForItem:(id<TGModernGalleryEditableItem>)item tab:(TGPhotoEditorTab)tab
 {
-    [self presentPhotoEditorForItem:item tab:tab snapshots:@[]];
+    [self presentPhotoEditorForItem:item tab:tab snapshots:@[] fromRect:CGRectZero];
 }
 
-- (void)presentPhotoEditorForItem:(id<TGModernGalleryEditableItem>)item tab:(TGPhotoEditorTab)tab snapshots:(NSArray *)snapshots
+- (void)presentPhotoEditorForItem:(id<TGModernGalleryEditableItem>)item tab:(TGPhotoEditorTab)tab snapshots:(NSArray *)snapshots fromRect:(CGRect)fromRect
 {
     __weak TGMediaPickerGalleryModel *weakSelf = self;
     
@@ -358,12 +356,15 @@
 
     CGRect refFrame = CGRectZero;
     UIView *editorReferenceView = [self referenceViewForItem:item frame:&refFrame];
+    if (!CGRectEqualToRect(fromRect, CGRectZero)) {
+        refFrame = fromRect;
+    }
     UIView *referenceView = nil;
     UIImage *screenImage = nil;
     UIView *referenceParentView = nil;
     UIImage *image = nil;
     
-    TGPhotoEntitiesContainerView *entitiesView = nil;
+     UIView<TGPhotoDrawingEntitiesView> *entitiesView = nil;
     
     id<TGMediaEditableItem> editableMediaItem = item.editableMediaItem;
     
@@ -373,7 +374,7 @@
         screenImage = [(UIImageView *)editorReferenceView image];
         referenceView = editorReferenceView;
         
-        if ([editorReferenceView.subviews.firstObject.subviews.firstObject.subviews.firstObject isKindOfClass:[TGPhotoEntitiesContainerView class]]) {
+        if ([editorReferenceView.subviews.firstObject.subviews.firstObject.subviews.firstObject conformsToProtocol:@protocol(TGPhotoDrawingEntitiesView)]) {
             entitiesView = editorReferenceView.subviews.firstObject.subviews.firstObject.subviews.firstObject;
         }
     }
@@ -417,7 +418,7 @@
     };
     
     void (^didFinishEditingItem)(id<TGMediaEditableItem>item, id<TGMediaEditAdjustments> adjustments, UIImage *resultImage, UIImage *thumbnailImage) = self.didFinishEditingItem;
-    controller.didFinishEditing = ^(id<TGMediaEditAdjustments> adjustments, UIImage *resultImage, UIImage *thumbnailImage, bool hasChanges)
+    controller.didFinishEditing = ^(id<TGMediaEditAdjustments> adjustments, UIImage *resultImage, UIImage *thumbnailImage, bool hasChanges, void(^commit)(void))
     {
         __strong TGMediaPickerGalleryModel *strongSelf = weakSelf;
         if (strongSelf == nil) {
@@ -442,6 +443,8 @@
             [videoItemView setScrubbingPanelApperanceLocked:false];
             [videoItemView presentScrubbingPanelAfterReload:hasChanges];
         }
+        
+        commit();
     };
     
     controller.didFinishRenderingFullSizeImage = ^(UIImage *image)
@@ -513,7 +516,7 @@
         [zoomableItemView reset];
     };
     
-    controller.beginTransitionOut = ^UIView *(CGRect *referenceFrame, __unused UIView **parentView)
+    controller.beginTransitionOut = ^UIView *(CGRect *referenceFrame, __unused UIView **parentView, __unused bool saving)
     {
         __strong TGMediaPickerGalleryModel *strongSelf = weakSelf;
         if (strongSelf == nil)

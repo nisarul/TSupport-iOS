@@ -1,0 +1,4 @@
+module DarwinDirStat {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/Utils/DarwinDirStat/PublicHeaders/DarwinDirStat/DarwinDirStat.h"
+    export *
+}

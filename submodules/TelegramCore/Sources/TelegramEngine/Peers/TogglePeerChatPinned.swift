@@ -17,7 +17,6 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
         let isPremium = transaction.getPeer(accountPeerId)?.isPremium ?? false
         
         let appConfiguration = transaction.getPreferencesEntry(key: PreferencesKeys.appConfiguration)?.get(AppConfiguration.self) ?? .defaultValue
-        let limitsConfiguration = transaction.getPreferencesEntry(key: PreferencesKeys.limitsConfiguration)?.get(LimitsConfiguration.self) ?? LimitsConfiguration.defaultValue
         let userLimitsConfiguration = UserLimitsConfiguration(appConfiguration: appConfiguration, isPremium: isPremium)
         
         switch location {
@@ -42,14 +41,11 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
                 additionalCount = 1
             }
             
-
-
-            
             let limitCount: Int
             if case .root = groupId {
                 limitCount = Int(userLimitsConfiguration.maxPinnedChatCount)
             } else {
-                limitCount = Int(limitsConfiguration.maxArchivedPinnedChatCount)
+                limitCount = Int(userLimitsConfiguration.maxArchivedPinnedChatCount)
             }
             
             let count = sameKind.count + additionalCount
@@ -76,8 +72,10 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
                         if updatedData.includePeers.pinnedPeers.contains(peerId) {
                             updatedData.includePeers.removePinnedPeer(peerId)
                         } else {
-                            if !updatedData.includePeers.addPinnedPeer(peerId) {
+                            let _ = updatedData.includePeers.addPinnedPeer(peerId)
+                            if updatedData.includePeers.peers.count > userLimitsConfiguration.maxFolderChatsCount {
                                 result = .limitExceeded(count: updatedData.includePeers.peers.count, limit: Int(userLimitsConfiguration.maxFolderChatsCount))
+                                updatedData = data
                             }
                         }
                         filters[index] = .filter(id: id, title: title, emoticon: emoticon, data: updatedData)

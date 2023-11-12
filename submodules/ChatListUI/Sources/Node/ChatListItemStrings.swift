@@ -45,10 +45,17 @@ private func messageGroupType(messages: [EngineMessage]) -> MessageGroupType {
     return currentType
 }
 
-public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, messages: [EngineMessage], chatPeer: EngineRenderedPeer, accountPeerId: EnginePeer.Id, enableMediaEmoji: Bool = true, isPeerGroup: Bool = false) -> (peer: EnginePeer?, hideAuthor: Bool, messageText: String, spoilers: [NSRange]?, customEmojiRanges: [(NSRange, ChatTextInputTextCustomEmojiAttribute)]?) {
+public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, contentSettings: ContentSettings, messages: [EngineMessage], chatPeer: EngineRenderedPeer, accountPeerId: EnginePeer.Id, enableMediaEmoji: Bool = true, isPeerGroup: Bool = false) -> (peer: EnginePeer?, hideAuthor: Bool, messageText: String, spoilers: [NSRange]?, customEmojiRanges: [(NSRange, ChatTextInputTextCustomEmojiAttribute)]?) {
     let peer: EnginePeer?
     
     let message = messages.last
+    
+    if let restrictionReason = message?._asMessage().restrictionReason(platform: "ios", contentSettings: contentSettings) {
+        return (nil, false, restrictionReason, nil, nil)
+    }
+    if let restrictionReason = chatPeer.chatMainPeer?.restrictionText(platform: "ios", contentSettings: contentSettings) {
+        return (nil, false, restrictionReason, nil, nil)
+    }
     
     var hideAuthor = false
     var messageText: String
@@ -120,10 +127,8 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                     case _ as TelegramMediaImage:
                         if message.text.isEmpty {
                             messageText = strings.Message_Photo
-                        } else if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
-                            if enableMediaEmoji {
-                                messageText = "🖼 \(messageText)"
-                            }
+                        } else if enableMediaEmoji {
+                            messageText = "🖼 \(messageText)"
                         }
                     case let fileMedia as TelegramMediaFile:
                         var processed = false
@@ -181,7 +186,7 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                                         if message.text.isEmpty {
                                             messageText = strings.Message_Video
                                             processed = true
-                                        } else if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
+                                        } else {
                                             if enableMediaEmoji {
                                                 if !fileMedia.isAnimated {
                                                     messageText = "📹 \(messageText)"
@@ -270,15 +275,20 @@ public func chatListItemStrings(strings: PresentationStrings, nameDisplayOrder: 
                                     }
                                 }
                             default:
-                                hideAuthor = true
-                                if let (text, textSpoilers, customEmojiRangesValue) = plainServiceMessageString(strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: message, accountPeerId: accountPeerId, forChatList: true) {
+                                switch action.action {
+                                case .topicCreated, .topicEdited:
+                                    hideAuthor = false
+                                default:
+                                    hideAuthor = true
+                                }
+                                if let (text, textSpoilers, customEmojiRangesValue) = plainServiceMessageString(strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: message, accountPeerId: accountPeerId, forChatList: true, forForumOverview: false) {
                                     messageText = text
                                     spoilers = textSpoilers
                                     customEmojiRanges = customEmojiRangesValue
                                 }
                         }
                     case _ as TelegramMediaExpiredContent:
-                        if let (text, _, _) = plainServiceMessageString(strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: message, accountPeerId: accountPeerId, forChatList: true) {
+                        if let (text, _, _) = plainServiceMessageString(strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: message, accountPeerId: accountPeerId, forChatList: true, forForumOverview: false) {
                             messageText = text
                         }
                     case let poll as TelegramMediaPoll:

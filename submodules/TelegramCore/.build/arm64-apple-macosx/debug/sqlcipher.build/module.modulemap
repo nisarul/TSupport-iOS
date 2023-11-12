@@ -1,0 +1,4 @@
+module sqlcipher {
+    umbrella "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/sqlcipher/PublicHeaders"
+    export *
+}

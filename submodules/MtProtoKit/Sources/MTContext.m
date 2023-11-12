@@ -22,7 +22,7 @@
 
 #import <MtProtoKit/MTApiEnvironment.h>
 
-#import <libkern/OSAtomic.h>
+#import <os/lock.h>
 
 #import "MTDiscoverConnectionSignals.h"
 
@@ -176,7 +176,7 @@ static MTDatacenterAuthInfoMapKeyStruct parseAuthInfoMapKeyInteger(NSNumber *key
     
     NSMutableDictionary *_periodicTasksTimerByDatacenterId;
     
-    volatile OSSpinLock _passwordEntryRequiredLock;
+    os_unfair_lock _passwordEntryRequiredLock;
     NSMutableDictionary *_passwordRequiredByDatacenterId;
     
     NSMutableDictionary *_transportSchemeDisposableByDatacenterId;
@@ -227,10 +227,11 @@ static int32_t fixedTimeDifferenceValue = 0;
         _apiEnvironment = apiEnvironment;
         _isTestingEnvironment = isTestingEnvironment;
         _useTempAuthKeys = useTempAuthKeys;
-#if DEBUG
-        _tempKeyExpiration = 1 * 60 * 60;
-#else
+        
         _tempKeyExpiration = 24 * 60 * 60;
+        
+#if DEBUG
+        //_tempKeyExpiration = 30;
 #endif
         
         _datacenterSeedAddressSetById = [[NSMutableDictionary alloc] init];
@@ -401,14 +402,19 @@ static void copyKeychainKey(NSString * _Nonnull group, NSString * _Nonnull key, 
             NSDictionary *datacenterAuthInfoById = [keychain objectForKey:@"datacenterAuthInfoById" group:@"persistent"];
             if (datacenterAuthInfoById != nil) {
                 _datacenterAuthInfoById = [[NSMutableDictionary alloc] initWithDictionary:datacenterAuthInfoById];
-/*#if DEBUG
+
                 NSArray<NSNumber *> *keys = [_datacenterAuthInfoById allKeys];
+                
+                int32_t currentTimestamp = (int32_t)([NSDate date].timeIntervalSince1970);
+                
                 for (NSNumber *key in keys) {
                     if (parseAuthInfoMapKeyInteger(key).selector != MTDatacenterAuthInfoSelectorPersistent) {
-                        [_datacenterAuthInfoById removeObjectForKey:key];
+                        MTDatacenterAuthInfo *authInfo = _datacenterAuthInfoById[key];
+                        if (authInfo.validUntilTimestamp != INT32_MAX && currentTimestamp > authInfo.validUntilTimestamp) {
+                            [_datacenterAuthInfoById removeObjectForKey:key];
+                        }
                     }
                 }
-#endif*/
             }
             
             NSDictionary *datacenterPublicKeysById = [keychain objectForKey:@"datacenterPublicKeysById" group:@"ephemeral"];
@@ -680,20 +686,20 @@ static void copyKeychainKey(NSString * _Nonnull group, NSString * _Nonnull key, 
 
 - (bool)isPasswordInputRequiredForDatacenterWithId:(NSInteger)datacenterId
 {
-    OSSpinLockLock(&_passwordEntryRequiredLock);
+    os_unfair_lock_lock(&_passwordEntryRequiredLock);
     bool currentValue = [_passwordRequiredByDatacenterId[@(datacenterId)] boolValue];
-    OSSpinLockUnlock(&_passwordEntryRequiredLock);
+    os_unfair_lock_unlock(&_passwordEntryRequiredLock);
     
     return currentValue;
 }
 
 - (bool)updatePasswordInputRequiredForDatacenterWithId:(NSInteger)datacenterId required:(bool)required
 {
-    OSSpinLockLock(&_passwordEntryRequiredLock);
+    os_unfair_lock_lock(&_passwordEntryRequiredLock);
     bool currentValue = [_passwordRequiredByDatacenterId[@(datacenterId)] boolValue];
     bool updated = currentValue != required;
     _passwordRequiredByDatacenterId[@(datacenterId)] = @(required);
-    OSSpinLockUnlock(&_passwordEntryRequiredLock);
+    os_unfair_lock_unlock(&_passwordEntryRequiredLock);
     
     if (updated)
     {
@@ -733,7 +739,7 @@ static void copyKeychainKey(NSString * _Nonnull group, NSString * _Nonnull key, 
             
             for (id<MTContextChangeListener> listener in currentListeners) {
                 if ([listener respondsToSelector:@selector(contextDatacenterTransportSchemesUpdated:datacenterId:shouldReset:)])
-                    [listener contextDatacenterTransportSchemesUpdated:self datacenterId:datacenterId shouldReset:true];
+                    [listener contextDatacenterTransportSchemesUpdated:self datacenterId:datacenterId shouldReset:false];
             }
         }
     }];
@@ -1478,7 +1484,7 @@ static void copyKeychainKey(NSString * _Nonnull group, NSString * _Nonnull key, 
             _datacenterCheckKeyRemovedActionTimestamps[@(datacenterId)] = currentTimestamp;
             [_datacenterCheckKeyRemovedActions[@(datacenterId)] dispose];
             __weak MTContext *weakSelf = self;
-            _datacenterCheckKeyRemovedActions[@(datacenterId)] = [[MTDiscoverConnectionSignals checkIfAuthKeyRemovedWithContext:self datacenterId:datacenterId authKey:[[MTDatacenterAuthKey alloc] initWithAuthKey:authInfo.authKey authKeyId:authInfo.authKeyId notBound:false]] startWithNext:^(NSNumber* isRemoved) {
+            _datacenterCheckKeyRemovedActions[@(datacenterId)] = [[MTDiscoverConnectionSignals checkIfAuthKeyRemovedWithContext:self datacenterId:datacenterId authKey:[[MTDatacenterAuthKey alloc] initWithAuthKey:authInfo.authKey authKeyId:authInfo.authKeyId validUntilTimestamp:authInfo.validUntilTimestamp notBound:false]] startWithNext:^(NSNumber* isRemoved) {
                 [[MTContext contextQueue] dispatchOnQueue:^{
                     __strong MTContext *strongSelf = weakSelf;
                     if (strongSelf == nil) {

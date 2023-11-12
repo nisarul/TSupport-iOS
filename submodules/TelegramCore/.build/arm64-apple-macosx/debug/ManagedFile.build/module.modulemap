@@ -1,0 +1,4 @@
+module ManagedFile {
+    header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/TelegramCore/.build/arm64-apple-macosx/debug/ManagedFile.build/ManagedFile-Swift.h"
+    requires objc
+}

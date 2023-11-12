@@ -10,6 +10,10 @@ import TelegramStringFormatting
 import TextFormat
 import Markdown
 import ChatPresentationInterfaceState
+import TextNodeWithEntities
+import AnimationCache
+import MultiAnimationRenderer
+import AccountContext
 
 private enum ChatReportPeerTitleButton: Equatable {
     case block
@@ -20,29 +24,32 @@ private enum ChatReportPeerTitleButton: Equatable {
     case reportIrrelevantGeoLocation
     case unarchive
     case addMembers
+    case restartTopic
     
     func title(strings: PresentationStrings) -> String {
         switch self {
-            case .block:
-                return strings.Conversation_BlockUser
-            case let .addContact(name):
-                if let name = name {
-                    return strings.Conversation_AddNameToContacts(name).string
-                } else {
-                    return strings.Conversation_AddToContacts
-                }
-            case .shareMyPhoneNumber:
-                return strings.Conversation_ShareMyPhoneNumber
-            case .reportSpam:
-                return strings.Conversation_ReportSpamAndLeave
-            case .reportUserSpam:
-                return strings.Conversation_ReportSpam
-            case .reportIrrelevantGeoLocation:
-                return strings.Conversation_ReportGroupLocation
-            case .unarchive:
-                return strings.Conversation_Unarchive
-            case .addMembers:
-                return strings.Conversation_AddMembers
+        case .block:
+            return strings.Conversation_BlockUser
+        case let .addContact(name):
+            if let name = name {
+                return strings.Conversation_AddNameToContacts(name).string
+            } else {
+                return strings.Conversation_AddToContacts
+            }
+        case .shareMyPhoneNumber:
+            return strings.Conversation_ShareMyPhoneNumber
+        case .reportSpam:
+            return strings.Conversation_ReportSpamAndLeave
+        case .reportUserSpam:
+            return strings.Conversation_ReportSpam
+        case .reportIrrelevantGeoLocation:
+            return strings.Conversation_ReportGroupLocation
+        case .unarchive:
+            return strings.Conversation_Unarchive
+        case .addMembers:
+            return strings.Conversation_AddMembers
+        case .restartTopic:
+            return strings.Chat_PanelRestartTopic
         }
     }
 }
@@ -89,16 +96,37 @@ private func peerButtons(_ state: ChatPresentationInterfaceState) -> [ChatReport
                 buttons.append(.shareMyPhoneNumber)
             }
         }
-    } else if let _ = state.renderedPeer?.chatMainPeer, case .peer = state.chatLocation {
-        if let contactStatus = state.contactStatus, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.suggestAddMembers) {
-            buttons.append(.addMembers)
-        } else if let contactStatus = state.contactStatus, contactStatus.canReportIrrelevantLocation, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.canReportIrrelevantGeoLocation) {
-            buttons.append(.reportIrrelevantGeoLocation)
-        } else if let contactStatus = state.contactStatus, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.autoArchived) {
-            buttons.append(.reportUserSpam)
-            buttons.append(.unarchive)
-        } else {
-            buttons.append(.reportSpam)
+    } else if let peer = state.renderedPeer?.chatMainPeer {
+        if let channel = peer as? TelegramChannel, channel.flags.contains(.isForum) {
+            if let threadData = state.threadData {
+                if threadData.isClosed {
+                    var canManage = false
+                    if channel.flags.contains(.isCreator) {
+                        canManage = true
+                    } else if channel.hasPermission(.manageTopics) {
+                        canManage = true
+                    } else if threadData.isOwnedByMe {
+                        canManage = true
+                    }
+                    
+                    if canManage {
+                        return [.restartTopic]
+                    }
+                }
+            }
+        }
+        
+        if case .peer = state.chatLocation {
+            if let contactStatus = state.contactStatus, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.suggestAddMembers) {
+                buttons.append(.addMembers)
+            } else if let contactStatus = state.contactStatus, contactStatus.canReportIrrelevantLocation, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.canReportIrrelevantGeoLocation) {
+                buttons.append(.reportIrrelevantGeoLocation)
+            } else if let contactStatus = state.contactStatus, let peerStatusSettings = contactStatus.peerStatusSettings, peerStatusSettings.contains(.autoArchived) {
+                buttons.append(.reportUserSpam)
+                buttons.append(.unarchive)
+            } else {
+                buttons.append(.reportSpam)
+            }
         }
     }
     return buttons
@@ -138,6 +166,14 @@ private final class ChatInfoTitlePanelInviteInfoNode: ASDisplayNode {
                 }
             }
         }
+    }
+    
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let result = super.hitTest(point, with: event)
+        if result == self.view {
+            return nil
+        }
+        return result
     }
     
     func update(width: CGFloat, theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, chatPeer: Peer, invitedBy: Peer, transition: ContainedViewLayoutTransition) -> CGFloat {
@@ -301,11 +337,16 @@ private final class ChatInfoTitlePanelPeerNearbyInfoNode: ASDisplayNode {
 }
 
 final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
+    private let context: AccountContext
+    private let animationCache: AnimationCache
+    private let animationRenderer: MultiAnimationRenderer
+    
     private let separatorNode: ASDisplayNode
     
     private let closeButton: HighlightableButtonNode
     private var buttons: [(ChatReportPeerTitleButton, UIButton)] = []
     private let textNode: ImmediateTextNode
+    private var emojiStatusTextNode: TextNodeWithEntities?
     
     private var theme: PresentationTheme?
     
@@ -314,7 +355,11 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
     
     private var tapGestureRecognizer: UITapGestureRecognizer?
     
-    override init() {
+    init(context: AccountContext, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer) {
+        self.context = context
+        self.animationCache = animationCache
+        self.animationRenderer = animationRenderer
+        
         self.separatorNode = ASDisplayNode()
         self.separatorNode.isLayerBacked = true
         
@@ -366,7 +411,7 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
         } else {
             updatedButtons = []
         }
-        
+                
         var buttonsUpdated = false
         if self.buttons.count != updatedButtons.count {
             buttonsUpdated = true
@@ -402,17 +447,17 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
             }
         }
         
+        let additionalRightInset: CGFloat = 36.0
         if !self.buttons.isEmpty {
             let maxInset = max(contentRightInset, leftInset)
             if self.buttons.count == 1 {
-                let buttonWidth = floor((width - maxInset * 2.0) / CGFloat(self.buttons.count))
+                let buttonWidth = floor((width - maxInset * 2.0 - additionalRightInset) / CGFloat(self.buttons.count))
                 var nextButtonOrigin: CGFloat = maxInset
                 for (_, view) in self.buttons {
-                    view.frame = CGRect(origin: CGPoint(x: nextButtonOrigin, y: 0.0), size: CGSize(width: buttonWidth, height: panelHeight))
+                    view.frame = CGRect(origin: CGPoint(x: floorToScreenPixels((width - buttonWidth) / 2.0), y: 0.0), size: CGSize(width: buttonWidth, height: panelHeight))
                     nextButtonOrigin += buttonWidth
                 }
             } else {
-                let additionalRightInset: CGFloat = 36.0
                 var areaWidth = width - maxInset * 2.0 - additionalRightInset
                 let maxButtonWidth = floor(areaWidth / CGFloat(self.buttons.count))
                 let buttonSizes = self.buttons.map { button -> CGFloat in
@@ -481,18 +526,93 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
             self.tapGestureRecognizer?.isEnabled = false
         }
         
-        
         let closeButtonSize = self.closeButton.measure(CGSize(width: 100.0, height: 100.0))
         transition.updateFrame(node: self.closeButton, frame: CGRect(origin: CGPoint(x: width - contentRightInset - closeButtonSize.width, y: floorToScreenPixels((panelHeight - closeButtonSize.height) / 2.0)), size: closeButtonSize))
+        if updatedButtons.contains(.restartTopic) {
+            self.closeButton.isHidden = true
+        } else {
+            self.closeButton.isHidden = false
+        }
+        
+        var emojiStatus: PeerEmojiStatus?
+        if let user = interfaceState.renderedPeer?.peer as? TelegramUser, let emojiStatusValue = user.emojiStatus {
+            if user.isFake || user.isScam {
+            } else {
+                emojiStatus = emojiStatusValue
+            }
+        }
+        
+        /*#if DEBUG
+        emojiStatus = PeerEmojiStatus(fileId: 5062172592505356289, expirationDate: nil)
+        #endif*/
+        
+        if let emojiStatus = emojiStatus {
+            let emojiStatusTextNode: TextNodeWithEntities
+            if let current = self.emojiStatusTextNode {
+                emojiStatusTextNode = current
+            } else {
+                emojiStatusTextNode = TextNodeWithEntities()
+                self.emojiStatusTextNode = emojiStatusTextNode
+                self.addSubnode(emojiStatusTextNode.textNode)
+            }
+            
+            let plainText = interfaceState.strings.Chat_PanelCustomStatusInfo(".")
+            let attributedText = NSMutableAttributedString(attributedString: NSAttributedString(string: plainText.string, font: Font.regular(13.0), textColor: interfaceState.theme.rootController.navigationBar.secondaryTextColor, paragraphAlignment: .center))
+            for range in plainText.ranges {
+                attributedText.addAttribute(ChatTextInputAttributes.customEmoji, value: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: emojiStatus.fileId, file: nil), range: range.range)
+            }
+            
+            let makeEmojiStatusLayout = TextNodeWithEntities.asyncLayout(emojiStatusTextNode)
+            let (emojiStatusLayout, emojiStatusApply) = makeEmojiStatusLayout(TextNodeLayoutArguments(
+                attributedString: attributedText,
+                backgroundColor: nil,
+                minimumNumberOfLines: 0,
+                maximumNumberOfLines: 0,
+                truncationType: .end,
+                constrainedSize: CGSize(width: width - leftInset * 2.0 - 8.0 * 2.0, height: CGFloat.greatestFiniteMagnitude),
+                alignment: .center,
+                verticalAlignment: .top,
+                lineSpacing: 0.0,
+                cutout: nil,
+                insets: UIEdgeInsets(),
+                lineColor: nil,
+                textShadowColor: nil,
+                textStroke: nil,
+                displaySpoilers: false,
+                displayEmbeddedItemsUnderSpoilers: false
+            ))
+            let _ = emojiStatusApply(TextNodeWithEntities.Arguments(
+                context: self.context,
+                cache: self.animationCache,
+                renderer: self.animationRenderer,
+                placeholderColor: interfaceState.theme.list.mediaPlaceholderColor,
+                attemptSynchronous: false
+            ))
+            transition.updateFrame(node: emojiStatusTextNode.textNode, frame: CGRect(origin: CGPoint(x: floor((width - emojiStatusLayout.size.width) / 2.0), y: panelHeight), size: emojiStatusLayout.size))
+            panelHeight += emojiStatusLayout.size.height + 8.0
+            
+            emojiStatusTextNode.visibilityRect = .infinite
+        } else {
+            if let emojiStatusTextNode = self.emojiStatusTextNode {
+                self.emojiStatusTextNode = nil
+                emojiStatusTextNode.textNode.removeFromSupernode()
+            }
+        }
 
         let initialPanelHeight = panelHeight
         transition.updateFrame(node: self.separatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: width, height: UIScreenPixel)))
+        
+        var panelInset: CGFloat = 0.0
+        if let _ = interfaceState.translationState {
+            panelInset += 40.0
+        }
         
         var chatPeer: Peer?
         if let renderedPeer = interfaceState.renderedPeer {
             chatPeer = renderedPeer.peers[renderedPeer.peerId]
         }
-        if let chatPeer = chatPeer, let invitedBy = interfaceState.contactStatus?.invitedBy {
+        var hitTestSlop: CGFloat = 0.0
+        if let chatPeer = chatPeer, (updatedButtons.contains(.block) || updatedButtons.contains(.reportSpam) || updatedButtons.contains(.reportUserSpam)), let invitedBy = interfaceState.contactStatus?.invitedBy {
             var inviteInfoTransition = transition
             let inviteInfoNode: ChatInfoTitlePanelInviteInfoNode
             if let current = self.inviteInfoNode {
@@ -510,8 +630,9 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
             
             if let inviteInfoNode = self.inviteInfoNode {
                 let inviteHeight = inviteInfoNode.update(width: width, theme: interfaceState.theme, strings: interfaceState.strings, wallpaper: interfaceState.chatWallpaper, chatPeer: chatPeer, invitedBy: invitedBy, transition: inviteInfoTransition)
-                inviteInfoTransition.updateFrame(node: inviteInfoNode, frame: CGRect(origin: CGPoint(x: 0.0, y: panelHeight), size: CGSize(width: width, height: inviteHeight)))
+                inviteInfoTransition.updateFrame(node: inviteInfoNode, frame: CGRect(origin: CGPoint(x: 0.0, y: panelHeight + panelInset), size: CGSize(width: width, height: inviteHeight)))
                 panelHeight += inviteHeight
+                hitTestSlop = -inviteHeight
             }
         } else if let inviteInfoNode = self.inviteInfoNode {
             self.inviteInfoNode = nil
@@ -538,7 +659,7 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
             
             if let peerNearbyInfoNode = self.peerNearbyInfoNode {
                 let peerNearbyHeight = peerNearbyInfoNode.update(width: width, theme: interfaceState.theme, strings: interfaceState.strings, wallpaper: interfaceState.chatWallpaper, chatPeer: chatPeer, distance: distance, transition: peerNearbyInfoTransition)
-                peerNearbyInfoTransition.updateFrame(node: peerNearbyInfoNode, frame: CGRect(origin: CGPoint(x: 0.0, y: panelHeight), size: CGSize(width: width, height: peerNearbyHeight)))
+                peerNearbyInfoTransition.updateFrame(node: peerNearbyInfoNode, frame: CGRect(origin: CGPoint(x: 0.0, y: panelHeight + panelInset), size: CGSize(width: width, height: peerNearbyHeight)))
                 panelHeight += peerNearbyHeight
             }
         } else if let peerNearbyInfoNode = self.peerNearbyInfoNode {
@@ -547,26 +668,27 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
                 peerNearbyInfoNode?.removeFromSupernode()
             })
         }
-        
-        return LayoutResult(backgroundHeight: initialPanelHeight, insetHeight: panelHeight)
+        return LayoutResult(backgroundHeight: initialPanelHeight, insetHeight: panelHeight + panelInset, hitTestSlop: hitTestSlop)
     }
     
     @objc func buttonPressed(_ view: UIButton) {
         for (button, buttonView) in self.buttons {
             if buttonView === view {
                 switch button {
-                    case .shareMyPhoneNumber:
-                        self.interfaceInteraction?.shareAccountContact()
-                    case .block, .reportSpam, .reportUserSpam:
-                        self.interfaceInteraction?.reportPeer()
-                    case .unarchive:
-                        self.interfaceInteraction?.unarchivePeer()
-                    case .addMembers:
-                        self.interfaceInteraction?.presentInviteMembers()
-                    case .addContact:
-                        self.interfaceInteraction?.presentPeerContact()
-                    case .reportIrrelevantGeoLocation:
-                        self.interfaceInteraction?.reportPeerIrrelevantGeoLocation()
+                case .shareMyPhoneNumber:
+                    self.interfaceInteraction?.shareAccountContact()
+                case .block, .reportSpam, .reportUserSpam:
+                    self.interfaceInteraction?.reportPeer()
+                case .unarchive:
+                    self.interfaceInteraction?.unarchivePeer()
+                case .addMembers:
+                    self.interfaceInteraction?.presentInviteMembers()
+                case .addContact:
+                    self.interfaceInteraction?.presentPeerContact()
+                case .reportIrrelevantGeoLocation:
+                    self.interfaceInteraction?.reportPeerIrrelevantGeoLocation()
+                case .restartTopic:
+                    self.interfaceInteraction?.restartTopic()
                 }
                 break
             }
@@ -578,13 +700,16 @@ final class ChatReportPeerTitlePanelNode: ChatTitleAccessoryPanelNode {
     }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if let result = self.closeButton.hitTest(CGPoint(x: point.x - self.closeButton.frame.minX, y: point.y - self.closeButton.frame.minY), with: event) {
+        if !self.closeButton.isHidden, let result = self.closeButton.hitTest(CGPoint(x: point.x - self.closeButton.frame.minX, y: point.y - self.closeButton.frame.minY), with: event) {
             return result
         }
         if let inviteInfoNode = self.inviteInfoNode {
             if let result = inviteInfoNode.view.hitTest(self.view.convert(point, to: inviteInfoNode.view), with: event) {
                 return result
             }
+        }
+        if point.y > 40.0 {
+            return nil
         }
         return super.hitTest(point, with: event)
     }

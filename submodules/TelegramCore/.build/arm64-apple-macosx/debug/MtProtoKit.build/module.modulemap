@@ -1,0 +1,4 @@
+module MtProtoKit {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/MtProtoKit/PublicHeaders/MtProtoKit/MtProtoKit.h"
+    export *
+}

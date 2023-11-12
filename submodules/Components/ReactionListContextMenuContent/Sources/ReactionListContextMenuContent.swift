@@ -12,6 +12,12 @@ import AnimatedAvatarSetNode
 import ContextUI
 import AvatarNode
 import ReactionImageComponent
+import AnimationCache
+import MultiAnimationRenderer
+import EmojiTextAttachmentView
+import TextFormat
+import EmojiStatusComponent
+import TelegramStringFormatting
 
 private let avatarFont = avatarPlaceholderFont(size: 16.0)
 
@@ -88,13 +94,14 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             
             self.highlightBackgroundNode.frame = CGRect(origin: CGPoint(), size: size)
             
-            self.titleLabelNode.attributedText = NSAttributedString(string: presentationData.strings.Common_Back, font: Font.regular(17.0), textColor: presentationData.theme.contextMenu.primaryColor)
+            let titleFontSize = presentationData.listsFontSize.baseDisplaySize * 17.0 / 17.0
+            
+            self.titleLabelNode.attributedText = NSAttributedString(string: presentationData.strings.Common_Back, font: Font.regular(titleFontSize), textColor: presentationData.theme.contextMenu.primaryColor)
             let titleSize = self.titleLabelNode.updateLayout(CGSize(width: size.width - sideInset - standardIconWidth, height: 100.0))
-            self.titleLabelNode.frame = CGRect(origin: CGPoint(x: sideInset, y: floor((size.height - titleSize.height) / 2.0)), size: titleSize)
+            self.titleLabelNode.frame = CGRect(origin: CGPoint(x: sideInset + 36.0, y: floor((size.height - titleSize.height) / 2.0)), size: titleSize)
             
             if let iconImage = self.iconNode.image {
-                let iconWidth = max(standardIconWidth, iconImage.size.width)
-                let iconFrame = CGRect(origin: CGPoint(x: size.width - iconSideInset - iconWidth + floor((iconWidth - iconImage.size.width) / 2.0), y: floor((size.height - iconImage.size.height) / 2.0)), size: iconImage.size)
+                let iconFrame = CGRect(origin: CGPoint(x: iconSideInset, y: floor((size.height - iconImage.size.height) / 2.0)), size: iconImage.size)
                 self.iconNode.frame = iconFrame
             }
             
@@ -106,51 +113,111 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
     private final class ReactionTabListNode: ASDisplayNode {
         private final class ItemNode: ASDisplayNode {
             let context: AccountContext
-            let reaction: String?
+            let animationCache: AnimationCache
+            let animationRenderer: MultiAnimationRenderer
+            let reaction: MessageReaction.Reaction?
             let count: Int
             
             let titleLabelNode: ImmediateTextNode
-            let iconNode: ASImageNode?
-            let reactionIconNode: ReactionImageNode?
+            var iconNode: ASImageNode?
+            var reactionLayer: InlineStickerItemLayer?
+            
+            private var iconFrame: CGRect?
+            private var file: TelegramMediaFile?
+            private var fileDisposable: Disposable?
             
             private var theme: PresentationTheme?
             
-            var action: ((String?) -> Void)?
+            var action: ((MessageReaction.Reaction?) -> Void)?
             
-            init(context: AccountContext, availableReactions: AvailableReactions?, reaction: String?, count: Int) {
+            init(context: AccountContext, availableReactions: AvailableReactions?, reaction: MessageReaction.Reaction?, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, count: Int) {
                 self.context = context
                 self.reaction = reaction
                 self.count = count
+                self.animationCache = animationCache
+                self.animationRenderer = animationRenderer
                 
                 self.titleLabelNode = ImmediateTextNode()
                 self.titleLabelNode.isUserInteractionEnabled = false
                 
-                if let reaction = reaction {
-                    self.reactionIconNode = ReactionImageNode(context: context, availableReactions: availableReactions, reaction: reaction, displayPixelSize: CGSize(width: 30.0 * UIScreenScale, height: 30.0 * UIScreenScale))
-                    self.reactionIconNode?.isUserInteractionEnabled = false
-                    self.iconNode = nil
-                } else {
-                    self.reactionIconNode = nil
-                    self.iconNode = ASImageNode()
-                    self.iconNode?.isUserInteractionEnabled = false
-                }
-                
                 super.init()
                 
                 self.addSubnode(self.titleLabelNode)
-                if let iconNode = self.iconNode {
+                
+                if let reaction = reaction {
+                    switch reaction {
+                    case .builtin:
+                        if let availableReactions = availableReactions {
+                            for availableReaction in availableReactions.reactions {
+                                if availableReaction.value == reaction {
+                                    self.file = availableReaction.centerAnimation
+                                    self.updateReactionLayer()
+                                    break
+                                }
+                            }
+                        }
+                    case let .custom(fileId):
+                        self.fileDisposable = (context.engine.stickers.resolveInlineStickers(fileIds: [fileId])
+                        |> deliverOnMainQueue).start(next: { [weak self] files in
+                            guard let strongSelf = self, let file = files[fileId] else {
+                                return
+                            }
+                            strongSelf.file = file
+                            strongSelf.updateReactionLayer()
+                        })
+                    }
+                } else {
+                    let iconNode = ASImageNode()
+                    self.iconNode = iconNode
                     self.addSubnode(iconNode)
-                }
-                if let reactionIconNode = self.reactionIconNode {
-                    self.addSubnode(reactionIconNode)
                 }
                 
                 self.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:))))
             }
             
+            deinit {
+                self.fileDisposable?.dispose()
+            }
+            
             @objc private func tapGesture(_ recognizer: UITapGestureRecognizer) {
                 if case .ended = recognizer.state {
                     self.action?(self.reaction)
+                }
+            }
+            
+            private func updateReactionLayer() {
+                guard let file = self.file else {
+                    return
+                }
+                
+                if let reactionLayer = self.reactionLayer {
+                    self.reactionLayer = nil
+                    reactionLayer.removeFromSuperlayer()
+                }
+                
+                let reactionLayer = InlineStickerItemLayer(
+                    context: context,
+                    userLocation: .other,
+                    attemptSynchronousLoad: false,
+                    emoji: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: file.fileId.id, file: file),
+                    file: file,
+                    cache: self.animationCache,
+                    renderer: self.animationRenderer,
+                    placeholderColor: UIColor(white: 0.0, alpha: 0.1),
+                    pointSize: CGSize(width: 50.0, height: 50.0)
+                )
+                self.reactionLayer = reactionLayer
+                
+                if let reaction = self.reaction, case .custom = reaction {
+                    reactionLayer.isVisibleForAnimations = true
+                }
+                self.layer.addSublayer(reactionLayer)
+                
+                if var iconFrame = self.iconFrame {
+                    if let reaction = self.reaction, case .builtin = reaction {
+                        iconFrame = iconFrame.insetBy(dx: -iconFrame.width * 0.5, dy: -iconFrame.height * 0.5)
+                    }
+                    reactionLayer.frame = iconFrame
                 }
             }
             
@@ -166,11 +233,9 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 let sideInset: CGFloat = 12.0
                 let iconSpacing: CGFloat = 4.0
                 
-                var iconSize = CGSize(width: 22.0, height: 22.0)
-                if let _ = self.reactionIconNode {
-                } else if let iconNode = self.iconNode, let image = iconNode.image {
-                    iconSize = image.size.aspectFitted(iconSize)
-                }
+                
+                let iconSize = CGSize(width: 22.0, height: 22.0)
+                self.iconFrame = CGRect(origin: CGPoint(x: sideInset, y: floorToScreenPixels((constrainedSize.height - iconSize.height) / 2.0)), size: iconSize)
                 
                 self.titleLabelNode.attributedText = NSAttributedString(string: "\(count)", font: Font.medium(11.0), textColor: presentationData.theme.contextMenu.primaryColor)
                 let titleSize = self.titleLabelNode.updateLayout(constrainedSize)
@@ -179,11 +244,15 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 
                 self.titleLabelNode.frame = CGRect(origin: CGPoint(x: sideInset + iconSize.width + iconSpacing, y: floorToScreenPixels((constrainedSize.height - titleSize.height) / 2.0)), size: titleSize)
                 
-                if let reactionIconNode = self.reactionIconNode {
-                    reactionIconNode.frame = CGRect(origin: CGPoint(x: sideInset, y: floorToScreenPixels((constrainedSize.height - iconSize.height) / 2.0)), size: iconSize)
-                    reactionIconNode.update(size: iconSize)
-                } else if let iconNode = self.iconNode {
+                if let iconNode = self.iconNode {
                     iconNode.frame = CGRect(origin: CGPoint(x: sideInset, y: floorToScreenPixels((constrainedSize.height - iconSize.height) / 2.0)), size: iconSize)
+                }
+                
+                if let reactionLayer = self.reactionLayer, var iconFrame = self.iconFrame {
+                    if let reaction = self.reaction, case .builtin = reaction {
+                        iconFrame = iconFrame.insetBy(dx: -iconFrame.width * 0.5, dy: -iconFrame.height * 0.5)
+                    }
+                    reactionLayer.frame = iconFrame
                 }
                 
                 return CGSize(width: contentSize.width, height: constrainedSize.height)
@@ -195,13 +264,13 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         private let itemNodes: [ItemNode]
         
         struct ScrollToTabReaction {
-            var value: String?
+            var value: MessageReaction.Reaction?
         }
         var scrollToTabReaction: ScrollToTabReaction?
         
-        var action: ((String?) -> Void)?
+        var action: ((MessageReaction.Reaction?) -> Void)?
         
-        init(context: AccountContext, availableReactions: AvailableReactions?, reactions: [(String?, Int)], message: EngineMessage) {
+        init(context: AccountContext, availableReactions: AvailableReactions?, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, reactions: [(MessageReaction.Reaction?, Int)], message: EngineMessage) {
             self.scrollNode = ASScrollNode()
             self.scrollNode.canCancelAllTouchesInViews = true
             self.scrollNode.view.delaysContentTouches = false
@@ -213,7 +282,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             self.scrollNode.view.disablesInteractiveTransitionGestureRecognizer = true
             
             self.itemNodes = reactions.map { reaction, count in
-                return ItemNode(context: context, availableReactions: availableReactions, reaction: reaction, count: count)
+                return ItemNode(context: context, availableReactions: availableReactions, reaction: reaction, animationCache: animationCache, animationRenderer: animationRenderer, count: count)
             }
             
             self.selectionHighlightNode = ASDisplayNode()
@@ -236,7 +305,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             }
         }
         
-        func update(size: CGSize, presentationData: PresentationData, selectedReaction: String?, transition: ContainedViewLayoutTransition) {
+        func update(size: CGSize, presentationData: PresentationData, selectedReaction: MessageReaction.Reaction?, transition: ContainedViewLayoutTransition) {
             let sideInset: CGFloat = 11.0
             let spacing: CGFloat = 0.0
             let verticalInset: CGFloat = 7.0
@@ -283,24 +352,40 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         }
     }
     
+    private static let readIconImage: UIImage? = generateTintedImage(image: UIImage(bundleImageName: "Chat/Message/MenuReadIcon"), color: .white)?.withRenderingMode(.alwaysTemplate)
+    private static let reactionIconImage: UIImage? = generateTintedImage(image: UIImage(bundleImageName: "Chat/Message/MenuReactionIcon"), color: .white)?.withRenderingMode(.alwaysTemplate)
+    
     private final class ReactionsTabNode: ASDisplayNode, UIScrollViewDelegate {
         private final class ItemNode: HighlightTrackingButtonNode {
             let context: AccountContext
+            let displayReadTimestamps: Bool
             let availableReactions: AvailableReactions?
+            let animationCache: AnimationCache
+            let animationRenderer: MultiAnimationRenderer
             let highlightBackgroundNode: ASDisplayNode
             let avatarNode: AvatarNode
             let titleLabelNode: ImmediateTextNode
-            var credibilityIconNode: ASImageNode?
+            let textLabelNode: ImmediateTextNode
+            let readIconView: UIImageView
+            var credibilityIconView: ComponentView<Empty>?
             let separatorNode: ASDisplayNode
-            var reactionIconNode: ReactionImageNode?
+            
+            private var reactionLayer: InlineStickerItemLayer?
+            private var iconFrame: CGRect?
+            private var file: TelegramMediaFile?
+            private var fileDisposable: Disposable?
+            
             let action: () -> Void
             
             private var item: EngineMessageReactionListContext.Item?
             
-            init(context: AccountContext, availableReactions: AvailableReactions?, action: @escaping () -> Void) {
+            init(context: AccountContext, displayReadTimestamps: Bool, availableReactions: AvailableReactions?, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, action: @escaping () -> Void) {
                 self.action = action
                 self.context = context
+                self.displayReadTimestamps = displayReadTimestamps
                 self.availableReactions = availableReactions
+                self.animationCache = animationCache
+                self.animationRenderer = animationRenderer
                 
                 self.avatarNode = AvatarNode(font: avatarFont)
                 self.avatarNode.isAccessibilityElement = false
@@ -314,6 +399,13 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 self.titleLabelNode.maximumNumberOfLines = 1
                 self.titleLabelNode.isUserInteractionEnabled = false
                 
+                self.textLabelNode = ImmediateTextNode()
+                self.textLabelNode.isAccessibilityElement = false
+                self.textLabelNode.maximumNumberOfLines = 1
+                self.textLabelNode.isUserInteractionEnabled = false
+                
+                self.readIconView = UIImageView(image: readIconImage)
+                
                 self.separatorNode = ASDisplayNode()
                 self.separatorNode.isAccessibilityElement = false
                 
@@ -325,6 +417,8 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 self.addSubnode(self.highlightBackgroundNode)
                 self.addSubnode(self.avatarNode)
                 self.addSubnode(self.titleLabelNode)
+                self.addSubnode(self.textLabelNode)
+                self.view.addSubview(self.readIconView)
                 
                 self.highligthedChanged = { [weak self] highlighted in
                     guard let strongSelf = self else {
@@ -342,8 +436,47 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 self.addTarget(self, action: #selector(self.pressed), forControlEvents: .touchUpInside)
             }
             
+            deinit {
+                self.fileDisposable?.dispose()
+            }
+            
             @objc private func pressed() {
                 self.action()
+            }
+            
+            private func updateReactionLayer() {
+                guard let file = self.file else {
+                    return
+                }
+                
+                if let reactionLayer = self.reactionLayer {
+                    self.reactionLayer = nil
+                    reactionLayer.removeFromSuperlayer()
+                }
+                
+                let reactionLayer = InlineStickerItemLayer(
+                    context: context,
+                    userLocation: .other,
+                    attemptSynchronousLoad: false,
+                    emoji: ChatTextInputTextCustomEmojiAttribute(interactivelySelectedFromPackId: nil, fileId: file.fileId.id, file: file),
+                    file: file,
+                    cache: self.animationCache,
+                    renderer: self.animationRenderer,
+                    placeholderColor: UIColor(white: 0.0, alpha: 0.1),
+                    pointSize: CGSize(width: 50.0, height: 50.0)
+                )
+                self.reactionLayer = reactionLayer
+                if let item = self.item, let reaction = item.reaction, case .custom = reaction {
+                    reactionLayer.isVisibleForAnimations = true
+                }
+                self.layer.addSublayer(reactionLayer)
+                
+                if var iconFrame = self.iconFrame {
+                    if let item = self.item, let reaction = item.reaction, case .builtin = reaction {
+                        iconFrame = iconFrame.insetBy(dx: -iconFrame.width * 0.5, dy: -iconFrame.height * 0.5)
+                    }
+                    reactionLayer.frame = iconFrame
+                }
             }
             
             func update(size: CGSize, presentationData: PresentationData, item: EngineMessageReactionListContext.Item, isLast: Bool, syncronousLoad: Bool) {
@@ -352,38 +485,101 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 let avatarSize: CGFloat = 28.0
                 let sideInset: CGFloat = 16.0
                 
-                let reaction: String? = item.reaction
-                if let reaction = reaction {
-                    if self.reactionIconNode == nil {
-                        let reactionIconNode = ReactionImageNode(context: self.context, availableReactions: self.availableReactions, reaction: reaction, displayPixelSize: CGSize(width: 30.0 * UIScreenScale, height: 30.0 * UIScreenScale))
-                        self.reactionIconNode = reactionIconNode
-                        self.addSubnode(reactionIconNode)
+                let reaction: MessageReaction.Reaction? = item.reaction
+                
+                if reaction != self.item?.reaction {
+                    if let reaction = reaction {
+                        switch reaction {
+                        case .builtin:
+                            if let availableReactions = self.availableReactions {
+                                for availableReaction in availableReactions.reactions {
+                                    if availableReaction.value == reaction {
+                                        self.file = availableReaction.centerAnimation
+                                        self.updateReactionLayer()
+                                        break
+                                    }
+                                }
+                            }
+                        case let .custom(fileId):
+                            self.fileDisposable = (self.context.engine.stickers.resolveInlineStickers(fileIds: [fileId])
+                            |> deliverOnMainQueue).start(next: { [weak self] files in
+                                guard let strongSelf = self, let file = files[fileId] else {
+                                    return
+                                }
+                                strongSelf.file = file
+                                strongSelf.updateReactionLayer()
+                            })
+                        }
+                    } else {
+                        self.file = nil
+                        self.fileDisposable?.dispose()
+                        self.fileDisposable = nil
+                        
+                        if let reactionLayer = self.reactionLayer {
+                            self.reactionLayer = nil
+                            reactionLayer.removeFromSuperlayer()
+                        }
                     }
-                } else if let reactionIconNode = self.reactionIconNode {
-                    reactionIconNode.removeFromSupernode()
                 }
                 
                 if self.item != item {
                     self.item = item
                     
-                    self.accessibilityLabel = "\(item.peer.debugDisplayTitle) \(item.reaction ?? "")"
+                    let reactionStringValue: String
+                    if let reaction = item.reaction {
+                        switch reaction {
+                        case let .builtin(value):
+                            reactionStringValue = value
+                        case .custom:
+                            reactionStringValue = ""
+                        }
+                    } else {
+                        reactionStringValue = ""
+                    }
+                    self.accessibilityLabel = "\(item.peer.debugDisplayTitle) \(reactionStringValue)"
                 }
                 
                 let premiumConfiguration = PremiumConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
-                var currentCredibilityIconImage: UIImage?      
+                var currentCredibilityIcon: EmojiStatusComponent.Content?
                 if item.peer.isScam {
-                    currentCredibilityIconImage = PresentationResourcesChatList.scamIcon(presentationData.theme, strings: presentationData.strings, type: .regular)
+                    currentCredibilityIcon = .text(color: presentationData.theme.chat.message.incoming.scamColor, string: presentationData.strings.Message_ScamAccount.uppercased())
                 } else if item.peer.isFake {
-                    currentCredibilityIconImage = PresentationResourcesChatList.fakeIcon(presentationData.theme, strings: presentationData.strings, type: .regular)
+                    currentCredibilityIcon = .text(color: presentationData.theme.chat.message.incoming.scamColor, string: presentationData.strings.Message_FakeAccount.uppercased())
+                } else if case let .user(user) = item.peer, let emojiStatus = user.emojiStatus {
+                    currentCredibilityIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: UIColor(white: 0.0, alpha: 0.1), themeColor: presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                 } else if item.peer.isVerified {
-                    currentCredibilityIconImage = PresentationResourcesChatList.verifiedIcon(presentationData.theme)
+                    currentCredibilityIcon = .verified(fillColor: presentationData.theme.list.itemCheckColors.fillColor, foregroundColor: presentationData.theme.list.itemCheckColors.foregroundColor, sizeType: .compact)
                 } else if item.peer.isPremium && !premiumConfiguration.isPremiumDisabled {
-                    currentCredibilityIconImage = PresentationResourcesChatList.premiumIcon(presentationData.theme)
+                    currentCredibilityIcon = .premium(color: presentationData.theme.list.itemCheckColors.fillColor)
+                }
+                
+                var credibilityIconSize: CGSize?
+                if let currentCredibilityIcon = currentCredibilityIcon {
+                    let credibilityIconView: ComponentView<Empty>
+                    if let current = self.credibilityIconView {
+                        credibilityIconView = current
+                    } else {
+                        credibilityIconView = ComponentView<Empty>()
+                        self.credibilityIconView = credibilityIconView
+                    }
+                    credibilityIconSize = credibilityIconView.update(
+                        transition: .immediate,
+                        component: AnyComponent(EmojiStatusComponent(
+                            context: self.context,
+                            animationCache: self.context.animationCache,
+                            animationRenderer: self.context.animationRenderer,
+                            content: currentCredibilityIcon,
+                            isVisibleForAnimations: true,
+                            action: nil
+                        )),
+                        environment: {},
+                        containerSize: CGSize(width: 24.0, height: 24.0)
+                    )
                 }
                 
                 var additionalTitleInset: CGFloat = 0.0
-                if let currentCredibilityIconImage = currentCredibilityIconImage {
-                    additionalTitleInset += 3.0 + currentCredibilityIconImage.size.width
+                if let credibilityIconSize = credibilityIconSize {
+                    additionalTitleInset += 3.0 + credibilityIconSize.width
                 }
                 
                 self.highlightBackgroundNode.backgroundColor = presentationData.theme.contextMenu.itemHighlightedBackgroundColor
@@ -394,38 +590,91 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 self.avatarNode.frame = CGRect(origin: CGPoint(x: avatarInset, y: floor((size.height - avatarSize) / 2.0)), size: CGSize(width: avatarSize, height: avatarSize))
                 self.avatarNode.setPeer(context: self.context, theme: presentationData.theme, peer: item.peer, synchronousLoad: true)
                 
-                self.titleLabelNode.attributedText = NSAttributedString(string: item.peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), font: Font.regular(17.0), textColor: presentationData.theme.contextMenu.primaryColor)
+                let titleFontSize = presentationData.listsFontSize.baseDisplaySize * 17.0 / 17.0
+                
+                self.titleLabelNode.attributedText = NSAttributedString(string: item.peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), font: Font.regular(titleFontSize), textColor: presentationData.theme.contextMenu.primaryColor)
                 var maxTextWidth: CGFloat = size.width - avatarInset - avatarSize - avatarSpacing - sideInset - additionalTitleInset
-                if reactionIconNode != nil {
+                if reaction != nil {
                     maxTextWidth -= 32.0
                 }
                 let titleSize = self.titleLabelNode.updateLayout(CGSize(width: maxTextWidth, height: 100.0))
-                let titleFrame = CGRect(origin: CGPoint(x: avatarInset + avatarSize + avatarSpacing, y: floor((size.height - titleSize.height) / 2.0)), size: titleSize)
-                self.titleLabelNode.frame = titleFrame
                 
-                if let currentCredibilityIconImage = currentCredibilityIconImage {
-                    let iconNode: ASImageNode
-                    if let current = self.credibilityIconNode {
-                        iconNode = current
-                    } else {
-                        iconNode = ASImageNode()
-                        iconNode.isLayerBacked = true
-                        iconNode.displaysAsynchronously = false
-                        iconNode.displayWithoutProcessing = true
-                        self.addSubnode(iconNode)
-                        self.credibilityIconNode = iconNode
-                    }
-                    iconNode.image = currentCredibilityIconImage
-                    iconNode.frame = CGRect(origin: CGPoint(x: titleFrame.maxX + 4.0, y: floorToScreenPixels(titleFrame.midY - currentCredibilityIconImage.size.height / 2.0) + 1.0 - UIScreenPixel), size: currentCredibilityIconImage.size)
-                } else if let credibilityIconNode = self.credibilityIconNode {
-                    self.credibilityIconNode = nil
-                    credibilityIconNode.removeFromSupernode()
+                var text = ""
+                if let timestamp = item.timestamp {
+                    let dateText = humanReadableStringForTimestamp(strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, timestamp: timestamp, alwaysShowTime: true, allowYesterday: true, format: HumanReadableStringFormat(
+                        dateFormatString: { value in
+                            return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_Date(value).string, ranges: [])
+                        },
+                        tomorrowFormatString: { value in
+                            return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_TodayAt(value).string, ranges: [])
+                        },
+                        todayFormatString: { value in
+                            return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_TodayAt(value).string, ranges: [])
+                        },
+                        yesterdayFormatString: { value in
+                            return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_YesterdayAt(value).string, ranges: [])
+                        }
+                    )).string
+                    text = dateText
                 }
                 
-                if let reactionIconNode = self.reactionIconNode {
-                    let reactionSize = CGSize(width: 22.0, height: 22.0)
-                    reactionIconNode.frame = CGRect(origin: CGPoint(x: size.width - 32.0 - floor((32.0 - reactionSize.width) / 2.0), y: floor((size.height - reactionSize.height) / 2.0)), size: reactionSize)
-                    reactionIconNode.update(size: reactionSize)
+                /*#if DEBUG
+                text = "yesterday at 12:00 PM"
+                #endif*/
+                
+                let textFontFraction = presentationData.listsFontSize.baseDisplaySize / 17.0
+                let textFontSize = floor(textFontFraction * 15.0)
+                
+                self.textLabelNode.attributedText = NSAttributedString(string: text, font: Font.regular(textFontSize), textColor: presentationData.theme.contextMenu.secondaryColor)
+                let textSize = self.textLabelNode.updateLayout(CGSize(width: maxTextWidth + 16.0, height: 100.0))
+                self.textLabelNode.isHidden = !self.displayReadTimestamps || text.isEmpty
+                
+                let textSpacing: CGFloat = floor(textFontFraction * 2.0)
+                let contentHeight: CGFloat
+                
+                if self.displayReadTimestamps && !text.isEmpty {
+                    contentHeight = titleSize.height + textSpacing + textSize.height
+                } else {
+                    contentHeight = titleSize.height
+                }
+                let contentY = floor((size.height - contentHeight) / 2.0)
+                
+                let titleFrame = CGRect(origin: CGPoint(x: avatarInset + avatarSize + avatarSpacing, y: contentY), size: titleSize)
+                self.titleLabelNode.frame = titleFrame
+                
+                let textFrame = CGRect(origin: CGPoint(x: titleFrame.minX + floor(textFontFraction * 18.0), y: titleFrame.maxY + textSpacing), size: textSize)
+                self.textLabelNode.frame = textFrame
+                
+                self.readIconView.image = item.timestampIsReaction ? ReactionListContextMenuContent.reactionIconImage : ReactionListContextMenuContent.readIconImage
+                
+                if let readImage = self.readIconView.image {
+                    self.readIconView.tintColor = presentationData.theme.contextMenu.secondaryColor
+                    let fraction: CGFloat = textFontFraction
+                    let iconSize = CGSize(width: floor(readImage.size.width * fraction), height: floor(readImage.size.height * fraction))
+                    self.readIconView.frame = CGRect(origin: CGPoint(x: titleFrame.minX, y: textFrame.minY + floor(textFontFraction * 4.0) - UIScreenPixel + (item.timestampIsReaction ? -2.0 - UIScreenPixel : 0.0)), size: iconSize)
+                }
+                self.readIconView.isHidden = !self.displayReadTimestamps || text.isEmpty
+                
+                if let credibilityIconView = self.credibilityIconView, let credibilityIconSize = credibilityIconSize {
+                    if let credibilityIconComponentView = credibilityIconView.view {
+                        if credibilityIconComponentView.superview == nil {
+                            self.view.addSubview(credibilityIconComponentView)
+                        }
+                        credibilityIconComponentView.frame = CGRect(origin: CGPoint(x: titleFrame.maxX + 4.0, y: floorToScreenPixels(titleFrame.midY - credibilityIconSize.height / 2.0) + 1.0 - UIScreenPixel), size: credibilityIconSize)
+                    }
+                } else if let credibilityIconView = self.credibilityIconView {
+                    self.credibilityIconView = nil
+                    credibilityIconView.view?.removeFromSuperview()
+                }
+                
+                let reactionSize = CGSize(width: floor(textFontFraction * 22.0), height: floor(textFontFraction * 22.0))
+                self.iconFrame = CGRect(origin: CGPoint(x: size.width - 32.0 - floor((32.0 - reactionSize.width) / 2.0), y: floor((size.height - reactionSize.height) / 2.0)), size: reactionSize)
+                
+                if let reactionLayer = self.reactionLayer, var iconFrame = self.iconFrame {
+                    if let reaction = reaction, case .builtin = reaction {
+                        iconFrame = iconFrame.insetBy(dx: -iconFrame.width * 0.5, dy: -iconFrame.height * 0.5)
+                    }
+                    reactionLayer.frame = iconFrame
                 }
                 
                 self.separatorNode.frame = CGRect(origin: CGPoint(x: 0.0, y: size.height), size: CGSize(width: size.width, height: UIScreenPixel))
@@ -444,15 +693,16 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 self.readStats = readStats
                 
                 var mergedItems: [EngineMessageReactionListContext.Item] = listState.items
-                if !listState.canLoadMore, let readStats = readStats {
+                if !listState.canLoadMore, let readStats = readStats {                    
                     var existingPeers = Set(mergedItems.map(\.peer.id))
                     for peer in readStats.peers {
                         if !existingPeers.contains(peer.id) {
                             existingPeers.insert(peer.id)
-                            mergedItems.append(EngineMessageReactionListContext.Item(peer: peer, reaction: nil))
+                            mergedItems.append(EngineMessageReactionListContext.Item(peer: peer, reaction: nil, timestamp: readStats.readTimestamps[peer.id], timestampIsReaction: false))
                         }
                     }
                 }
+                
                 self.mergedItems = mergedItems
             }
             
@@ -487,17 +737,21 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         }
         
         private let context: AccountContext
+        private let displayReadTimestamps: Bool
         private let availableReactions: AvailableReactions?
-        let reaction: String?
+        private let animationCache: AnimationCache
+        private let animationRenderer: MultiAnimationRenderer
+        let reaction: MessageReaction.Reaction?
         private let requestUpdate: (ReactionsTabNode, ContainedViewLayoutTransition) -> Void
         private let requestUpdateApparentHeight: (ReactionsTabNode, ContainedViewLayoutTransition) -> Void
-        private let openPeer: (PeerId) -> Void
+        private let openPeer: (EnginePeer, Bool) -> Void
         
         private var hasMore: Bool = false
         
         private let scrollNode: ASScrollNode
         private var ignoreScrolling: Bool = false
         private var animateIn: Bool = false
+        private var bottomScrollInset: CGFloat = 0.0
         
         private var presentationData: PresentationData?
         private var currentSize: CGSize?
@@ -514,23 +768,29 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         
         init(
             context: AccountContext,
+            displayReadTimestamps: Bool,
             availableReactions: AvailableReactions?,
+            animationCache: AnimationCache,
+            animationRenderer: MultiAnimationRenderer,
             message: EngineMessage,
-            reaction: String?,
+            reaction: MessageReaction.Reaction?,
             readStats: MessageReadStats?,
             requestUpdate: @escaping (ReactionsTabNode, ContainedViewLayoutTransition) -> Void,
             requestUpdateApparentHeight: @escaping (ReactionsTabNode, ContainedViewLayoutTransition) -> Void,
-            openPeer: @escaping (PeerId) -> Void
+            openPeer: @escaping (EnginePeer, Bool) -> Void
         ) {
             self.context = context
+            self.displayReadTimestamps = displayReadTimestamps
             self.availableReactions = availableReactions
+            self.animationCache = animationCache
+            self.animationRenderer = animationRenderer
             self.reaction = reaction
             self.requestUpdate = requestUpdate
             self.requestUpdateApparentHeight = requestUpdateApparentHeight
             self.openPeer = openPeer
             
-            self.listContext = context.engine.messages.messageReactionList(message: message, reaction: reaction)
-            self.state = ItemsState(listState: EngineMessageReactionListContext.State(message: message, reaction: reaction), readStats: readStats)
+            self.listContext = context.engine.messages.messageReactionList(message: message, readStats: readStats, reaction: reaction)
+            self.state = ItemsState(listState: EngineMessageReactionListContext.State(message: message, readStats: readStats, reaction: reaction), readStats: readStats)
             
             self.scrollNode = ASScrollNode()
             self.scrollNode.canCancelAllTouchesInViews = true
@@ -581,7 +841,15 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             
             if let size = self.currentSize {
                 var apparentHeight = -self.scrollNode.view.contentOffset.y + self.scrollNode.view.contentSize.height
-                apparentHeight = max(apparentHeight, 44.0)
+                
+                let heightFraction: CGFloat
+                if let presentationData = self.presentationData {
+                    heightFraction = presentationData.listsFontSize.baseDisplaySize / 17.0
+                } else {
+                    heightFraction = 1.0
+                }
+                
+                apparentHeight = max(apparentHeight, (self.displayReadTimestamps ? 56.0 : 44.0) * heightFraction)
                 apparentHeight = min(apparentHeight, size.height + 100.0)
                 if self.apparentHeight != apparentHeight {
                     self.apparentHeight = apparentHeight
@@ -598,7 +866,10 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             guard let presentationData = self.presentationData else {
                 return
             }
-            let itemHeight: CGFloat = 44.0
+            
+            let heightFraction: CGFloat = presentationData.listsFontSize.baseDisplaySize / 17.0
+            
+            let itemHeight: CGFloat = (self.displayReadTimestamps ? 56.0 : 44.0) * heightFraction
             let visibleBounds = self.scrollNode.bounds.insetBy(dx: 0.0, dy: -180.0)
             
             var validIds = Set<Int>()
@@ -619,9 +890,9 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                             itemNode = current
                         } else {
                             let openPeer = self.openPeer
-                            let peerId = item.peer.id
-                            itemNode = ItemNode(context: self.context, availableReactions: self.availableReactions, action: {
-                                openPeer(peerId)
+                            let peer = item.peer
+                            itemNode = ItemNode(context: self.context, displayReadTimestamps: self.displayReadTimestamps, availableReactions: self.availableReactions, animationCache: self.animationCache, animationRenderer: self.animationRenderer, action: {
+                                openPeer(peer, item.reaction != nil)
                             })
                             self.itemNodes[index] = itemNode
                             self.scrollNode.addSubnode(itemNode)
@@ -682,8 +953,20 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             }
         }
         
-        func update(presentationData: PresentationData, constrainedSize: CGSize, transition: ContainedViewLayoutTransition) -> (height: CGFloat, apparentHeight: CGFloat) {
-            let itemHeight: CGFloat = 44.0
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            var extendedScrollNodeFrame = self.scrollNode.frame
+            extendedScrollNodeFrame.size.height += self.bottomScrollInset
+            
+            if extendedScrollNodeFrame.contains(point) {
+                return self.scrollNode.view.hitTest(self.view.convert(point, to: self.scrollNode.view), with: event)
+            }
+            
+            return super.hitTest(point, with: event)
+        }
+        
+        func update(presentationData: PresentationData, constrainedSize: CGSize, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) -> (height: CGFloat, apparentHeight: CGFloat) {
+            let heightFraction: CGFloat = presentationData.listsFontSize.baseDisplaySize / 17.0
+            let itemHeight: CGFloat = (self.displayReadTimestamps ? 56.0 : 44.0) * heightFraction
             
             if self.presentationData?.theme !== presentationData.theme {
                 let sideInset: CGFloat = 40.0
@@ -731,8 +1014,13 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             if self.scrollNode.frame != CGRect(origin: CGPoint(), size: containerSize) {
                 self.scrollNode.frame = CGRect(origin: CGPoint(), size: containerSize)
             }
-            if self.scrollNode.view.contentSize != size {
-                self.scrollNode.view.contentSize = size
+            if self.scrollNode.view.contentInset.bottom != bottomInset {
+                self.scrollNode.view.contentInset.bottom = bottomInset
+            }
+            self.bottomScrollInset = bottomInset
+            let scrollContentSize = CGSize(width: size.width, height: size.height)
+            if self.scrollNode.view.contentSize != scrollContentSize {
+                self.scrollNode.view.contentSize = scrollContentSize
             }
             self.ignoreScrolling = false
             
@@ -751,10 +1039,13 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
     
     final class ItemsNode: ASDisplayNode, ContextControllerItemsNode, UIGestureRecognizerDelegate {
         private let context: AccountContext
+        private let displayReadTimestamps: Bool
         private let availableReactions: AvailableReactions?
+        private let animationCache: AnimationCache
+        private let animationRenderer: MultiAnimationRenderer
         private let message: EngineMessage
         private let readStats: MessageReadStats?
-        private let reactions: [(String?, Int)]
+        private let reactions: [(MessageReaction.Reaction?, Int)]
         private let requestUpdate: (ContainedViewLayoutTransition) -> Void
         private let requestUpdateApparentHeight: (ContainedViewLayoutTransition) -> Void
         
@@ -773,23 +1064,29 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         }
         private var interactiveTransitionState: InteractiveTransitionState?
         
-        private let openPeer: (PeerId) -> Void
+        private let openPeer: (EnginePeer, Bool) -> Void
         
         private(set) var apparentHeight: CGFloat = 0.0
         
         init(
             context: AccountContext,
+            displayReadTimestamps: Bool,
             availableReactions: AvailableReactions?,
+            animationCache: AnimationCache,
+            animationRenderer: MultiAnimationRenderer,
             message: EngineMessage,
-            reaction: String?,
+            reaction: MessageReaction.Reaction?,
             readStats: MessageReadStats?,
             requestUpdate: @escaping (ContainedViewLayoutTransition) -> Void,
             requestUpdateApparentHeight: @escaping (ContainedViewLayoutTransition) -> Void,
             back: (() -> Void)?,
-            openPeer: @escaping (PeerId) -> Void
+            openPeer: @escaping (EnginePeer, Bool) -> Void
         ) {
             self.context = context
+            self.displayReadTimestamps = displayReadTimestamps
             self.availableReactions = availableReactions
+            self.animationCache = animationCache
+            self.animationRenderer = animationRenderer
             self.message = message
             self.readStats = readStats
             self.openPeer = openPeer
@@ -808,7 +1105,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                 }
             }
             
-            var reactions: [(String?, Int)] = []
+            var reactions: [(MessageReaction.Reaction?, Int)] = []
             var totalCount: Int = 0
             if let reactionsAttribute = message._asMessage().reactionsAttribute {
                 for listReaction in reactionsAttribute.reactions {
@@ -823,7 +1120,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             }
             
             if reactions.count > 2 && totalCount > 10 {
-                self.tabListNode = ReactionTabListNode(context: context, availableReactions: availableReactions, reactions: reactions, message: message)
+                self.tabListNode = ReactionTabListNode(context: context, availableReactions: availableReactions, animationCache: animationCache, animationRenderer: animationRenderer, reactions: reactions, message: message)
             }
             
             self.reactions = reactions
@@ -956,7 +1253,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
         }
         
         func update(presentationData: PresentationData, constrainedWidth: CGFloat, maxHeight: CGFloat, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) -> (cleanSize: CGSize, apparentHeight: CGFloat) {
-            let constrainedSize = CGSize(width: min(260.0, constrainedWidth), height: maxHeight)
+            let constrainedSize = CGSize(width: min(self.displayReadTimestamps ? 280.0 : 260.0, constrainedWidth), height: maxHeight)
             
             var topContentHeight: CGFloat = 0.0
             if let backButtonNode = self.backButtonNode {
@@ -967,7 +1264,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             }
             if let tabListNode = self.tabListNode {
                 let tabListFrame = CGRect(origin: CGPoint(x: 0.0, y: topContentHeight), size: CGSize(width: constrainedSize.width, height: 44.0))
-                let selectedReaction: String? = self.reactions[self.currentTabIndex].0
+                let selectedReaction: MessageReaction.Reaction? = self.reactions[self.currentTabIndex].0
                 tabListNode.update(size: tabListFrame.size, presentationData: self.presentationData, selectedReaction: selectedReaction, transition: transition)
                 transition.updateFrame(node: tabListNode, frame: tabListFrame)
                 topContentHeight += tabListFrame.height
@@ -1009,7 +1306,10 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                     
                     tabNode = ReactionsTabNode(
                         context: self.context,
+                        displayReadTimestamps: self.displayReadTimestamps,
                         availableReactions: self.availableReactions,
+                        animationCache: self.animationCache,
+                        animationRenderer: self.animationRenderer,
                         message: self.message,
                         reaction: self.reactions[index].0,
                         readStats: self.reactions[index].0 == nil ? self.readStats : nil,
@@ -1044,7 +1344,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                     tabTransition = .immediate
                 }
                 
-                let tabLayout = tabNode.update(presentationData: presentationData, constrainedSize: CGSize(width: constrainedSize.width, height: constrainedSize.height - topContentHeight), transition: tabTransition)
+                let tabLayout = tabNode.update(presentationData: presentationData, constrainedSize: CGSize(width: constrainedSize.width, height: constrainedSize.height - topContentHeight), bottomInset: bottomInset, transition: tabTransition)
                 tabLayouts[index] = tabLayout
                 let currentFractionalTabIndex: CGFloat
                 if let interactiveTransitionState = self.interactiveTransitionState {
@@ -1107,10 +1407,10 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             var apparentHeight = topContentHeight
             
             if let interactiveTransitionState = self.interactiveTransitionState, let fromTabLayout = tabLayouts[self.currentTabIndex], let toTabLayout = tabLayouts[interactiveTransitionState.toIndex] {
-                let megedTabLayoutHeight = fromTabLayout.height * (1.0 - interactiveTransitionState.progress) + toTabLayout.height * interactiveTransitionState.progress
+                let mergedTabLayoutHeight = fromTabLayout.height * (1.0 - interactiveTransitionState.progress) + toTabLayout.height * interactiveTransitionState.progress
                 let megedTabLayoutApparentHeight = fromTabLayout.apparentHeight * (1.0 - interactiveTransitionState.progress) + toTabLayout.apparentHeight * interactiveTransitionState.progress
                 
-                contentSize.height += megedTabLayoutHeight
+                contentSize.height += mergedTabLayoutHeight
                 apparentHeight += megedTabLayoutApparentHeight
             } else if let tabLayout = tabLayouts[self.currentTabIndex] {
                 contentSize.height += tabLayout.height
@@ -1122,24 +1422,33 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
     }
     
     let context: AccountContext
+    let displayReadTimestamps: Bool
     let availableReactions: AvailableReactions?
+    let animationCache: AnimationCache
+    let animationRenderer: MultiAnimationRenderer
     let message: EngineMessage
-    let reaction: String?
+    let reaction: MessageReaction.Reaction?
     let readStats: MessageReadStats?
     let back: (() -> Void)?
-    let openPeer: (PeerId) -> Void
+    let openPeer: (EnginePeer, Bool) -> Void
     
     public init(
         context: AccountContext,
+        displayReadTimestamps: Bool,
         availableReactions: AvailableReactions?,
+        animationCache: AnimationCache,
+        animationRenderer: MultiAnimationRenderer,
         message: EngineMessage,
-        reaction: String?,
+        reaction: MessageReaction.Reaction?,
         readStats: MessageReadStats?,
         back: (() -> Void)?,
-        openPeer: @escaping (PeerId) -> Void
+        openPeer: @escaping (EnginePeer, Bool) -> Void
     ) {
         self.context = context
+        self.displayReadTimestamps = displayReadTimestamps
         self.availableReactions = availableReactions
+        self.animationCache = animationCache
+        self.animationRenderer = animationRenderer
         self.message = message
         self.reaction = reaction
         self.readStats = readStats
@@ -1153,7 +1462,10 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
     ) -> ContextControllerItemsNode {
         return ItemsNode(
             context: self.context,
+            displayReadTimestamps: self.displayReadTimestamps,
             availableReactions: self.availableReactions,
+            animationCache: self.animationCache,
+            animationRenderer: self.animationRenderer,
             message: self.message,
             reaction: self.reaction,
             readStats: self.readStats,

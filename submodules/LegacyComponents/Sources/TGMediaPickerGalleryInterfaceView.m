@@ -333,6 +333,12 @@
             if (strongSelf == nil)
                 return;
             
+            if (keyboardHeight > 0) {
+                [strongSelf->_portraitToolbarView setAllButtonsHidden:true animated:true];
+            } else {
+                [strongSelf->_portraitToolbarView setAllButtonsHidden:false animated:true];
+            }
+            
             CGFloat offset = 0.0f;
             if (keyboardHeight > 0)
                 offset = -keyboardHeight / 2.0f;
@@ -357,7 +363,9 @@
         _landscapeToolbarView.cancelPressed = toolbarCancelPressed;
         _landscapeToolbarView.donePressed = toolbarDonePressed;
         _landscapeToolbarView.doneLongPressed = toolbarDoneLongPressed;
-        [_wrapperView addSubview:_landscapeToolbarView];
+        
+        if ([UIDevice currentDevice].userInterfaceIdiom != UIUserInterfaceIdiomPad)
+            [_wrapperView addSubview:_landscapeToolbarView];
     }
     return self;
 }
@@ -1638,7 +1646,7 @@
     
     UIEdgeInsets captionEdgeInsets = screenEdges;
     captionEdgeInsets.bottom = _portraitToolbarView.frame.size.height;
-    [_captionMixin updateLayoutWithFrame:self.bounds edgeInsets:captionEdgeInsets];
+    [_captionMixin updateLayoutWithFrame:self.bounds edgeInsets:captionEdgeInsets animated:false];
     
     switch (orientation)
     {

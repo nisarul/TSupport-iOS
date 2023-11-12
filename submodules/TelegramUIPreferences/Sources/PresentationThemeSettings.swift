@@ -3,7 +3,12 @@ import UIKit
 import Postbox
 import TelegramCore
 import SwiftSignalKit
-import Display
+
+private extension UIColor {
+    convenience init(rgb: UInt32) {
+        self.init(red: CGFloat((rgb >> 16) & 0xff) / 255.0, green: CGFloat((rgb >> 8) & 0xff) / 255.0, blue: CGFloat(rgb & 0xff) / 255.0, alpha: 1.0)
+    }
+}
 
 public enum PresentationBuiltinThemeReference: Int32 {
     case dayClassic = 0
@@ -521,6 +526,18 @@ public struct PresentationThemeAccentColor: PostboxCoding, Equatable {
             return UIColor(rgb: UInt32(bitPattern: value))
         } else {
             return self.baseColor.color
+        }
+    }
+    
+    public func colorFor(baseTheme: TelegramBaseTheme) -> UIColor {
+        if let value = self.accentColor {
+            return UIColor(rgb: UInt32(bitPattern: value))
+        } else {
+            if baseTheme == .night && self.baseColor == .blue {
+                return UIColor(rgb: 0x3e88f7)
+            } else {
+                return self.baseColor.color
+            }
         }
     }
     

@@ -1,0 +1,4 @@
+module NetworkLogging {
+    umbrella header "/Users/haq/Telegram/TSupport/merge/TSupport-iOS/submodules/NetworkLogging/PublicHeaders/NetworkLogging/NetworkLogging.h"
+    export *
+}
