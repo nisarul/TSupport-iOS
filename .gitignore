@@ -57,6 +57,8 @@ bazel-out
 bazel-out/*
 bazel-telegram-ios
 bazel-telegram-ios/*
+bazel-TSupport-iOS
+bazel-TSupport-iOS/*
 bazel-testlogs
 bazel-testlogs/*
 xcodeproj.bazelrc
@@ -84,3 +86,14 @@ xcode-files
 **/node_modules/
 tools/sim-watcher/dist/
 .mcp.json
+
+# Local AI knowledge base and Copilot configuration (untracked by choice)
+/ai-docs/
+/.github/copilot-instructions.md
+/.github/agents/
+/.github/instructions/
+/.github/prompts/
+/.github/skills/
+
+# Local editor workspace
+/TSupport-iOS.code-workspace
