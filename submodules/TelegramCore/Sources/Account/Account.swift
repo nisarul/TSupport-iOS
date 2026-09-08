@@ -148,10 +148,7 @@ public class UnauthorizedAccount {
                         }
 
                         let user = TelegramUser(user: apiUser)
-                        var isSupportUser = false
-                        if let phone = user.phone, phone.hasPrefix("42"), phone.count <= 5 {
-                            isSupportUser = true
-                        }
+                        let isSupportUser = SupportAccount.isSupportPhoneNumber(user.phone)
                         let state = AuthorizedAccountState(isTestingEnvironment: testingEnvironment, masterDatacenterId: masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
                         initializedAppSettingsAfterLogin(transaction: transaction, appVersion: networkArguments.appVersion, syncContacts: syncContacts)
                         transaction.setState(state)
