@@ -1269,7 +1269,7 @@ public class Account {
         
         self.stateManager = AccountStateManager(accountPeerId: self.peerId, accountManager: accountManager, postbox: self.postbox, network: self.network, callSessionManager: self.callSessionManager, addIsContactUpdates: { [weak self] updates in
             self?.contactSyncManager?.addIsContactUpdates(updates)
-        }, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods)
+        }, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods, isSupportUser: isSupportUser)
         
         self.viewTracker = AccountViewTracker(account: self)
         self.viewTracker.resetPeerHoleManagement = { [weak self] peerId in
