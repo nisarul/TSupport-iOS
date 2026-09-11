@@ -715,7 +715,9 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: CGSize = CGSize(width: 60.0, height: 60.0),
             storeUnrounded: Bool = false
         ) {
-            let smallProfileImage = peer?.smallProfileImage
+            // Peer photos are suppressed for support volunteers outside the profile screen
+            // (D19). Nil here makes the monogram render, exactly as for a peer with no photo.
+            let smallProfileImage = genericContext.isSupportUser ? nil : peer?.smallProfileImage
             let params = Params(
                 peerId: peer?.id,
                 resourceId: smallProfileImage?.resource.id.stringRepresentation,
@@ -763,7 +765,7 @@ public final class AvatarNode: ASDisplayNode {
                 self.imageNode.view.mask = nil
             }
             
-            if let imageCache = genericContext.imageCache as? DirectMediaImageCache, let peer, let smallProfileImage = peer.smallProfileImage, let peerReference = PeerReference(peer) {
+            if !genericContext.isSupportUser, let imageCache = genericContext.imageCache as? DirectMediaImageCache, let peer, let smallProfileImage = peer.smallProfileImage, let peerReference = PeerReference(peer) {
                 if let result = imageCache.getAvatarImage(peer: peerReference, resource: MediaResourceReference.avatar(peer: peerReference, resource: smallProfileImage.resource), immediateThumbnail: peer.profileImageRepresentations.first?.immediateThumbnailData, size: Int(displayDimensions.width * UIScreenScale), synchronous: synchronousLoad) {
                     if let image = result.image {
                         self.imageNode.contents = image.cgImage
@@ -839,7 +841,13 @@ public final class AvatarNode: ASDisplayNode {
                     icon = .storyIcon
                 }
             } else if peer?.restrictionText(platform: "ios", contentSettings: genericContext.currentContentSettings.with { $0 }) == nil {
-                representation = peer?.smallProfileImage
+                // Support volunteers see a stream of strangers; peer photos are suppressed
+                // outside the profile screen (D19). Leaving `representation` nil makes
+                // AvatarNode fall back to its letter monogram, so layout is unchanged.
+                // The profile screen uses PeerInfoAvatarListNode and is unaffected.
+                if !genericContext.isSupportUser {
+                    representation = peer?.smallProfileImage
+                }
             }
             
             let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), peer?.nameColor, peer?.displayLetters ?? [], representation, clipStyle, cutoutRect)
