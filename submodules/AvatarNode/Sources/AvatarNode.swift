@@ -716,8 +716,27 @@ public final class AvatarNode: ASDisplayNode {
             storeUnrounded: Bool = false
         ) {
             // Peer photos are suppressed for support volunteers outside the profile screen
-            // (D19). Nil here makes the monogram render, exactly as for a peer with no photo.
-            let smallProfileImage = genericContext.isSupportUser ? nil : peer?.smallProfileImage
+            // (D19). setPeerV2 is an image-only fast path with no monogram rendering, so
+            // suppressing the photo here would leave a blank circle. Delegate to setPeer,
+            // which renders the letter monogram exactly as it does for a peer with no photo.
+            if genericContext.isSupportUser {
+                self.setPeer(
+                    context: genericContext,
+                    account: account,
+                    theme: theme,
+                    peer: peer,
+                    authorOfMessage: authorOfMessage,
+                    overrideImage: overrideImage,
+                    emptyColor: emptyColor,
+                    clipStyle: clipStyle,
+                    synchronousLoad: synchronousLoad,
+                    displayDimensions: displayDimensions,
+                    storeUnrounded: storeUnrounded
+                )
+                return
+            }
+            
+            let smallProfileImage = peer?.smallProfileImage
             let params = Params(
                 peerId: peer?.id,
                 resourceId: smallProfileImage?.resource.id.stringRepresentation,
@@ -765,7 +784,7 @@ public final class AvatarNode: ASDisplayNode {
                 self.imageNode.view.mask = nil
             }
             
-            if !genericContext.isSupportUser, let imageCache = genericContext.imageCache as? DirectMediaImageCache, let peer, let smallProfileImage = peer.smallProfileImage, let peerReference = PeerReference(peer) {
+            if let imageCache = genericContext.imageCache as? DirectMediaImageCache, let peer, let smallProfileImage = peer.smallProfileImage, let peerReference = PeerReference(peer) {
                 if let result = imageCache.getAvatarImage(peer: peerReference, resource: MediaResourceReference.avatar(peer: peerReference, resource: smallProfileImage.resource), immediateThumbnail: peer.profileImageRepresentations.first?.immediateThumbnailData, size: Int(displayDimensions.width * UIScreenScale), synchronous: synchronousLoad) {
                     if let image = result.image {
                         self.imageNode.contents = image.cgImage
