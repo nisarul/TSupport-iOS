@@ -107,7 +107,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
                                 let user = TelegramUser(user: apiUser)
                                 let isSupportUser = SupportAccount.isSupportPhoneNumber(user.phone)
                                 let state = AuthorizedAccountState(isTestingEnvironment: updatedAccount.testingEnvironment, masterDatacenterId: updatedAccount.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
-                                initializedAppSettingsAfterLogin(transaction: transaction, appVersion: updatedAccount.networkArguments.appVersion, syncContacts: syncContacts)
+                                initializedAppSettingsAfterLogin(transaction: transaction, appVersion: updatedAccount.networkArguments.appVersion, syncContacts: syncContacts, isSupportUser: isSupportUser)
                                 transaction.setState(state)
                                 return accountManager.transaction { transaction -> ExportAuthTransferTokenResult in
                                     switchToAuthorizedAccount(transaction: transaction, account: updatedAccount, isSupportUser: isSupportUser)
@@ -138,7 +138,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
                     let user = TelegramUser(user: apiUser)
                     let isSupportUser = SupportAccount.isSupportPhoneNumber(user.phone)
                     let state = AuthorizedAccountState(isTestingEnvironment: account.testingEnvironment, masterDatacenterId: account.masterDatacenterId, peerId: user.id, state: nil, invalidatedChannels: [])
-                    initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts)
+                    initializedAppSettingsAfterLogin(transaction: transaction, appVersion: account.networkArguments.appVersion, syncContacts: syncContacts, isSupportUser: isSupportUser)
                     transaction.setState(state)
                     return accountManager.transaction { transaction -> ExportAuthTransferTokenResult in
                         switchToAuthorizedAccount(transaction: transaction, account: account, isSupportUser: isSupportUser)
