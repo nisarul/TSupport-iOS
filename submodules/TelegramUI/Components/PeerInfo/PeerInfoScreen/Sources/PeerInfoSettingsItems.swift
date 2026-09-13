@@ -25,6 +25,7 @@ enum SettingsSection: Int, CaseIterable {
     case payment
     case extra
     case support
+    case logout
 }
 
 func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isExpanded: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
@@ -333,6 +334,14 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
         interaction.openSettings(.tips)
     }))
+    
+    // Log Out normally lives in the editing view, which support accounts cannot open
+    // (profile editing is blocked). Surface it here so a volunteer can still sign out.
+    if isSupportUser {
+        items[.logout]!.append(PeerInfoScreenActionItem(id: 0, text: presentationData.strings.Settings_Logout, color: .destructive, alignment: .center, action: {
+            interaction.openSettings(.logout)
+        }))
+    }
     
     var result: [(AnyHashable, [PeerInfoScreenItem])] = []
     for section in SettingsSection.allCases {
