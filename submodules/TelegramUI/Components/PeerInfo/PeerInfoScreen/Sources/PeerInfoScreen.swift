@@ -284,6 +284,11 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     let sourceMessageId: MessageId?
     var canDeleteReaction = false
     var dataDisposable: Disposable?
+
+    /// TSupport: in-progress text while a volunteer note is being edited inline. Non-nil
+    /// only while editing, and only ever on a support account.
+    private var supportInfoEditingText: String?
+    private let supportInfoUpdateDisposable = MetaDisposable()
     
     let activeActionDisposable = MetaDisposable()
     let resolveUrlDisposable = MetaDisposable()
@@ -1632,6 +1637,19 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             guard let strongSelf = self else {
                 return
             }
+            // TSupport: an inline note edit owns Done/Cancel while it is open.
+            if strongSelf.supportInfoEditingText != nil {
+                switch key {
+                case .done:
+                    strongSelf.commitSupportInfoEditing()
+                    return
+                case .cancel:
+                    strongSelf.endSupportInfoEditing()
+                    return
+                default:
+                    break
+                }
+            }
             switch key {
             case .back:
                 strongSelf.controller?.dismiss()
@@ -2250,7 +2268,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 switchToUpgradableGifts = true
             }
             
-            screenData = peerInfoScreenData(context: context, peerId: peerId, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, isSettings: self.isSettings, isMyProfile: self.isMyProfile, hintGroupInCommon: hintGroupInCommon, existingRequestsContext: requestsContext, existingProfileGiftsContext: profileGiftsContext, existingProfileGiftsCollectionsContext: nil, chatLocation: self.chatLocation, chatLocationContextHolder: self.chatLocationContextHolder, sharedMediaFromForumTopic: self.sharedMediaFromForumTopic, privacySettings: self.privacySettings.get(), forceHasGifts: initialPaneKey == .gifts, switchToUpgradableGifts: switchToUpgradableGifts)
+            screenData = peerInfoScreenDataWithSupportInfo(context: context, peerId: peerId, isSettings: self.isSettings, isMyProfile: self.isMyProfile, signal: peerInfoScreenData(context: context, peerId: peerId, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, isSettings: self.isSettings, isMyProfile: self.isMyProfile, hintGroupInCommon: hintGroupInCommon, existingRequestsContext: requestsContext, existingProfileGiftsContext: profileGiftsContext, existingProfileGiftsCollectionsContext: nil, chatLocation: self.chatLocation, chatLocationContextHolder: self.chatLocationContextHolder, sharedMediaFromForumTopic: self.sharedMediaFromForumTopic, privacySettings: self.privacySettings.get(), forceHasGifts: initialPaneKey == .gifts, switchToUpgradableGifts: switchToUpgradableGifts))
                        
             var previousTimestamp: Double?
             self.headerNode.displayPremiumIntro = { [weak self] sourceView, peerStatus, emojiStatusFileAndPack, white in
@@ -2660,7 +2678,77 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         }
     }
     
+    // MARK: TSupport — inline editing of the shared volunteer note.
+
+    /// Nil for regular accounts and for profiles where a note makes no sense, which is what
+    /// keeps the row (and the whole feature) invisible outside support mode.
+    private func supportInfoItemContext() -> SupportInfoItemContext? {
+        guard self.context.isSupportUser, !self.isSettings, !self.isMyProfile,
+              self.peerId.namespace == Namespaces.Peer.CloudUser,
+              self.peerId != self.context.account.peerId
+        else {
+            return nil
+        }
+        return SupportInfoItemContext(
+            editingText: self.supportInfoEditingText,
+            beginEditing: { [weak self] in
+                guard let self, self.supportInfoEditingText == nil else {
+                    return
+                }
+                self.supportInfoEditingText = self.data?.supportInfo?.text ?? ""
+                if let (layout, navigationHeight) = self.validLayout {
+                    self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .animated(duration: 0.3, curve: .spring), additive: false)
+                }
+            },
+            updateText: { [weak self] text in
+                // Only the buffer changes per keystroke; the item owns its own text node, so
+                // no relayout is needed here.
+                self?.supportInfoEditingText = text
+            }
+        )
+    }
+
+    private func endSupportInfoEditing() {
+        guard self.supportInfoEditingText != nil else {
+            return
+        }
+        self.supportInfoEditingText = nil
+        self.view.endEditing(true)
+        if let (layout, navigationHeight) = self.validLayout {
+            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .animated(duration: 0.3, curve: .spring), additive: false)
+        }
+    }
+
+    private func commitSupportInfoEditing() {
+        guard let editingText = self.supportInfoEditingText else {
+            return
+        }
+        let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = (self.data?.supportInfo?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        self.endSupportInfoEditing()
+
+        // Whitespace-only edits are discarded without a request: the server's copy stays
+        // canonical and re-renders unchanged on the next open.
+        guard trimmed != previous else {
+            return
+        }
+
+        let entities = generateTextEntities(trimmed, enabledTypes: [.mention, .hashtag, .allUrl])
+        let context = self.context
+        let peerId = self.peerId
+        self.supportInfoUpdateDisposable.set((context.engine.peers.updateSupportPeerInfo(peerId: peerId, text: trimmed, entities: entities)
+        |> deliverOnMainQueue).startStrict(error: { [weak self] _ in
+            guard let self else {
+                return
+            }
+            let presentationData = self.presentationData
+            self.controller?.present(textAlertController(context: context, title: nil, text: presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+        }))
+    }
+
     deinit {
+        self.supportInfoUpdateDisposable.dispose()
         self.dataDisposable?.dispose()
         self.hiddenMediaDisposable?.dispose()
         self.activeActionDisposable.dispose()
@@ -5489,7 +5577,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             insets.left += sectionInset
             insets.right += sectionInset
             
-            let items = self.isSettings ? settingsItems(data: self.data, context: self.context, presentationData: self.presentationData, interaction: self.interaction, isExpanded: self.headerNode.isAvatarExpanded) : infoItems(data: self.data, context: self.context, presentationData: self.presentationData, interaction: self.interaction, reactionSourceMessageId: self.reactionSourceMessageId, canDeleteReaction: self.canDeleteReaction, callMessages: self.callMessages, chatLocation: self.chatLocation, isOpenedFromChat: self.isOpenedFromChat, isMyProfile: self.isMyProfile)
+            let items = self.isSettings ? settingsItems(data: self.data, context: self.context, presentationData: self.presentationData, interaction: self.interaction, isExpanded: self.headerNode.isAvatarExpanded) : infoItems(data: self.data, context: self.context, presentationData: self.presentationData, interaction: self.interaction, reactionSourceMessageId: self.reactionSourceMessageId, canDeleteReaction: self.canDeleteReaction, callMessages: self.callMessages, chatLocation: self.chatLocation, isOpenedFromChat: self.isOpenedFromChat, isMyProfile: self.isMyProfile, supportInfoContext: self.supportInfoItemContext())
             
             contentHeight += headerHeight
             if !((self.isSettings || self.isMyProfile) && self.state.isEditing) {
@@ -5920,7 +6008,11 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         
             var leftNavigationButtons: [PeerInfoHeaderNavigationButtonSpec] = []
             var rightNavigationButtons: [PeerInfoHeaderNavigationButtonSpec] = []
-            if self.state.isEditing {
+            if self.supportInfoEditingText != nil {
+                // TSupport: while a note is being edited inline, the bar belongs to that edit.
+                leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .cancel, isForExpandedView: false))
+                rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .done, isForExpandedView: false))
+            } else if self.state.isEditing {
                 leftNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .cancel, isForExpandedView: false))
                 rightNavigationButtons.append(PeerInfoHeaderNavigationButtonSpec(key: .done, isForExpandedView: false))
             } else {
